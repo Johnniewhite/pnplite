@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="flex justify-between items-center mb-4">
+  <h2>Messages <span class="text-muted text-sm" style="font-weight:400; margin-left:0.5rem;">(latest {{ messages|length
+      }})</span></h2>
+</div>
+
+<div class="table-container">
+  <table>
+    <thead>
+      <tr>
+        <th>Time</th>
+        <th>Phone</th>
+        <th>Dir</th>
+        <th>State</th>
+        <th>Intent</th>
+        <th>Body</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for m in messages %}
+      <tr>
+        <td class="text-muted text-sm">{{ m.ts | datetimeformat }}</td>
+        <td>{{ m.phone }}</td>
+        <td>
+          {% if m.direction == 'in' %}
+          <span class="pill pill-neutral"
+            style="background: rgba(59, 130, 246, 0.1); color: var(--accent-primary);">IN</span>
+          {% else %}
+          <span class="pill pill-neutral"
+            style="background: rgba(16, 185, 129, 0.1); color: var(--accent-success);">OUT</span>
+          {% endif %}
+        </td>
+        <td class="text-sm text-muted">{{ m.state_after or m.state_before }}</td>
+        <td>{% if m.intent %}<span class="pill pill-neutral">{{ m.intent }}</span>{% endif %}</td>
+        <td style="max-width: 400px;">
+          {{ m.body }}
+          {% if m.media_url %}
+          <a href="{{ m.media_url }}" target="_blank" class="text-muted" style="margin-left:0.35rem;">[media]</a>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

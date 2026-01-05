@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="dashboard-header animate-slide-up">
+    <div>
+        <h1 class="gradient-text">User Clusters</h1>
+        <p class="text-secondary">Manage custom shopping groups and shared carts.</p>
+    </div>
+    <div class="header-actions">
+        <div class="pulse-indicator">
+            <span class="pulse-dot"></span>
+            {{ clusters | length }} Active Groups
+        </div>
+    </div>
+</div>
+
+<div class="card animate-fade-in">
+    <div class="table-container">
+        <table>
+            <thead>
+                <tr>
+                    <th>Cluster Name</th>
+                    <th>Owner</th>
+                    <th>Members</th>
+                    <th>Items</th>
+                    <th>Status</th>
+                    <th style="text-align: right;">Action</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for c in clusters %}
+                <tr>
+                    <td>
+                        <div style="font-weight: 700; color: var(--text-primary);">{{ c.name }}</div>
+                        <div class="text-xs text-muted font-mono">ID: {{ c._id[:8] }}...</div>
+                    </td>
+                    <td>
+                        <div class="flex items-center gap-2">
+                            <span class="user-avatar" style="width: 24px; height: 24px; font-size: 0.7rem;">{{
+                                c.owner_name[0] | upper }}</span>
+                            <span>{{ c.owner_name }}</span>
+                        </div>
+                    </td>
+                    <td>
+                        <span class="pill pill-neutral">{{ c.member_count }} people</span>
+                    </td>
+                    <td>{{ c.item_count }} items</td>
+                    <td>
+                        {% if c.is_active %}
+                        <span class="pill pill-success">Active</span>
+                        {% else %}
+                        <span class="pill pill-danger">Closed</span>
+                        {% endif %}
+                    </td>
+                    <td style="text-align: right;">
+                        <a href="/ui/admin/clusters/{{ c._id }}" class="btn btn-secondary btn-sm">
+                            View Details
+                        </a>
+                    </td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="6" style="text-align: center; padding: 3rem;">
+                        <div class="text-muted">No custom clusters found. Groups are created automatically via WhatsApp.
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

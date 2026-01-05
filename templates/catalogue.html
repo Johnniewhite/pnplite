@@ -1,0 +1,433 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="dashboard-header animate-slide-up">
+  <div>
+    <h1 class="gradient-text">Catalogue</h1>
+    <p class="text-secondary">Manage your inventory, prices, and cluster availability.</p>
+  </div>
+  <div class="header-actions">
+    <div class="search-wrapper">
+      <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none"
+        stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="11" cy="11" r="8"></circle>
+        <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+      </svg>
+      <input type="text" id="catalogueSearch" placeholder="Search products..." class="form-input"
+        style="padding-left: 2.75rem; border-radius: 99px;">
+    </div>
+    <button class="btn btn-primary" onclick="openDrawer()">
+      <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none"
+        stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <line x1="12" y1="5" x2="12" y2="19"></line>
+        <line x1="5" y1="12" x2="19" y2="12"></line>
+      </svg>
+      Add Product
+    </button>
+  </div>
+</div>
+
+{% if msg %}
+<div class="alert alert-success animate-slide-up" style="margin-bottom: 2rem;">
+  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+    stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+    <polyline points="22 4 12 14.01 9 11.01"></polyline>
+  </svg>
+  {{ msg }}
+</div>
+{% endif %}
+
+<div class="catalogue-grid-premium" id="productGrid">
+  {% for p in products %}
+  <div class="product-card-premium animate-fade-in" data-search="{{ p.name }} {{ p.sku }}">
+    <div class="card-image-premium" {% if p.image_url %}style="background-image: url('{{ p.image_url }}')" {% endif %}>
+      {% if not p.image_url %}
+      <div class="empty-placeholder" style="height: 100%; border-radius: 0;">
+        <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none"
+          stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+          <circle cx="8.5" cy="8.5" r="1.5"></circle>
+          <polyline points="21 15 16 10 5 21"></polyline>
+        </svg>
+      </div>
+      {% endif %}
+      <div class="card-overlay-badges">
+        {% if p.in_stock %}
+        <span class="pill pill-success">In Stock</span>
+        {% else %}
+        <span class="pill pill-danger">Out of Stock</span>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="card-details-premium">
+      <h3 class="product-name-premium">{{ p.name }}</h3>
+      <div class="product-sku-pill">{{ p.sku }}</div>
+
+      {% if p.clusters %}
+      <div class="cluster-list" style="margin-top: 1rem;">
+        {% for c in p.clusters %}
+        <span class="pill pill-info" style="font-size: 0.7rem; padding: 0.2rem 0.5rem;">
+          {{ c.city }}{% if c.area %} - {{ c.area }}{% endif %}
+        </span>
+        {% endfor %}
+      </div>
+      {% endif %}
+
+      <div class="price-row-premium">
+        <div class="price-premium">₦{{ p.price }}</div>
+      </div>
+    </div>
+
+    <div class="card-footer-premium">
+      <button class="btn btn-secondary" style="flex: 1;" onclick='openDrawer({{ p | tojson | forceescape | safe }})'>
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
+          stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+          <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+        </svg>
+        Edit
+      </button>
+      <form method="post" action="/ui/admin/catalogue/delete" onsubmit="return confirm('Delete this product?');"
+        style="flex: 1;">
+        <input type="hidden" name="sku" value="{{ p.sku }}">
+        <button type="submit" class="btn btn-danger" style="width: 100%;">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
+            stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="3 6 5 6 21 6"></polyline>
+            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+          </svg>
+          Delete
+        </button>
+      </form>
+    </div>
+  </div>
+  {% endfor %}
+
+  {% if not products %}
+  <div class="empty-placeholder" style="grid-column: 1 / -1; min-height: 300px;">
+    <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="12" r="10"></circle>
+      <line x1="12" y1="8" x2="12" y2="12"></line>
+      <line x1="12" y1="16" x2="12.01" y2="16"></line>
+    </svg>
+    <h3>No products yet</h3>
+    <p>Start your collection by adding a new product.</p>
+  </div>
+  {% endif %}
+</div>
+
+<!-- Drawer Component -->
+<div class="drawer-overlay" id="productDrawer">
+  <div class="drawer-panel">
+    <form id="productForm" method="post" action="/ui/admin/catalogue" enctype="multipart/form-data"
+      style="height: 100%; display: flex; flex-direction: column;">
+      <div class="drawer-header">
+        <div>
+          <h2 id="drawerTitle" style="margin: 0; font-size: 1.5rem;" class="gradient-text">Add Product</h2>
+          <p class="text-xs text-muted mt-1">Fill in the details to update your store inventory.</p>
+        </div>
+        <button type="button" class="btn-icon" onclick="closeDrawer()"
+          style="background: rgba(255,255,255,0.05); border-radius: 50%; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; color: var(--text-muted);">
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none"
+            stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </div>
+
+      <div class="drawer-body">
+        <!-- Basic Info Section -->
+        <div class="form-section">
+          <h4 class="text-xs text-muted uppercase tracking-widest mb-4">Basic Information</h4>
+          <div class="form-group mb-4">
+            <label class="form-label text-sm font-bold mb-2 block">Product Name</label>
+            <input type="text" name="name" id="pName" class="form-input mb-0" placeholder="e.g. Premium Rice 50kg"
+              required>
+          </div>
+
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+            <div class="form-group">
+              <label class="form-label text-sm font-bold mb-2 block">SKU</label>
+              <input type="text" name="sku" id="pSku" class="form-input mb-0" placeholder="e.g. RICE-P50" required>
+            </div>
+            <div class="form-group">
+              <label class="form-label text-sm font-bold mb-2 block">Price (₦)</label>
+              <input type="text" name="price" id="pPrice" class="form-input currency-input mb-0" placeholder="0.00"
+                required>
+            </div>
+          </div>
+        </div>
+
+        <!-- Stock & Media Section -->
+        <div class="form-section">
+          <h4 class="text-xs text-muted uppercase tracking-widest mb-4">Availability & Media</h4>
+
+          <label class="form-checkbox-label mb-4">
+            <input type="checkbox" name="in_stock" id="pStock" class="form-checkbox" value="true" checked>
+            <span>
+              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none"
+                stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"
+                style="margin-right: 0.75rem;">
+                <polyline points="20 6 9 17 4 12"></polyline>
+              </svg>
+              Mark as In Stock
+            </span>
+          </label>
+
+          <div class="form-group">
+            <label class="form-label text-sm font-bold mb-2 block">Product Image</label>
+            <label class="file-upload-label">
+              <div id="imagePlaceholder" style="display: flex; flex-direction: column; align-items: center;">
+                <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none"
+                  stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"
+                  style="margin-bottom: 0.5rem; opacity: 0.5;">
+                  <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                  <circle cx="8.5" cy="8.5" r="1.5"></circle>
+                  <polyline points="21 15 16 10 5 21"></polyline>
+                </svg>
+                <span class="text-sm">Click to upload or drag image</span>
+              </div>
+              <div id="imagePreview"
+                style="display: none; width: 100%; height: 160px; border-radius: 8px; background-size: cover; background-position: center;">
+              </div>
+              <input type="file" name="image_file" id="pImage" accept="image/*" class="form-checkbox"
+                onchange="previewFile()">
+            </label>
+            <input type="hidden" name="image_url" id="pImageUrl">
+          </div>
+        </div>
+
+        <!-- Clusters Section -->
+        <div class="form-section">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+            <h4 class="text-xs text-muted uppercase tracking-widest m-0">Cluster Availability</h4>
+            <button type="button" class="btn btn-secondary btn-sm" onclick="addClusterRow()"
+              style="padding: 0.4rem 0.8rem; font-size: 0.75rem;">
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none"
+                stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="12" y1="5" x2="12" y2="19"></line>
+                <line x1="5" y1="12" x2="19" y2="12"></line>
+              </svg>
+              Add Location
+            </button>
+          </div>
+          <div id="clusterContainer" class="cluster-rows-container">
+            <!-- Cluster Rows injected here -->
+          </div>
+        </div>
+      </div>
+
+      <div class="drawer-footer">
+        <button type="submit" class="btn btn-primary" style="width: 100%; padding: 1rem; font-size: 1rem;">
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none"
+            stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path>
+            <polyline points="17 21 17 13 7 13 7 21"></polyline>
+            <polyline points="7 3 7 8 15 8"></polyline>
+          </svg>
+          Save Product Changes
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const drawerOverlay = document.getElementById('productDrawer');
+  const drawerTitle = document.getElementById('drawerTitle');
+  const pName = document.getElementById('pName');
+  const pSku = document.getElementById('pSku');
+  const pPrice = document.getElementById('pPrice');
+  const pStock = document.getElementById('pStock');
+  const pImageUrl = document.getElementById('pImageUrl');
+  const imagePreview = document.getElementById('imagePreview');
+  const imagePlaceholder = document.getElementById('imagePlaceholder');
+  const clusterContainer = document.getElementById('clusterContainer');
+  const searchInput = document.getElementById('catalogueSearch');
+
+  // Search logic
+  if (searchInput) {
+    searchInput.addEventListener('input', (e) => {
+      const term = e.target.value.toLowerCase().trim();
+      document.querySelectorAll('.product-card-premium').forEach(card => {
+        const data = card.dataset.search.toLowerCase();
+        card.style.display = data.includes(term) ? 'flex' : 'none';
+      });
+    });
+  }
+
+  // Improved Currency Formatting
+  const currencyInputs = document.querySelectorAll('.currency-input');
+  currencyInputs.forEach(input => {
+    input.addEventListener('input', (e) => {
+      let value = e.target.value.replace(/[^0-9.]/g, '');
+      if (value) {
+        const parts = value.split('.');
+        parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+        if (parts.length > 2) parts.pop(); // Only one decimal point
+        e.target.value = parts.join('.');
+      }
+    });
+
+    // Auto-fix on blur
+    input.addEventListener('blur', (e) => {
+      if (e.target.value && !e.target.value.includes('.')) {
+        e.target.value = e.target.value + '.00';
+      }
+    });
+  });
+
+  function previewFile() {
+    const preview = document.getElementById('imagePreview');
+    const placeholder = document.getElementById('imagePlaceholder');
+    const file = document.getElementById('pImage').files[0];
+    const reader = new FileReader();
+
+    reader.onloadend = function () {
+      preview.style.backgroundImage = `url(${reader.result})`;
+      preview.style.display = 'block';
+      placeholder.style.display = 'none';
+    }
+
+    if (file) {
+      reader.readAsDataURL(file);
+    } else {
+      preview.style.backgroundImage = null;
+      preview.style.display = 'none';
+      placeholder.style.display = 'flex';
+    }
+  }
+
+  function openDrawer(productData = null) {
+    let product = productData;
+    if (typeof productData === 'string') {
+      try {
+        product = JSON.parse(productData);
+      } catch (e) {
+        console.error("Failed to parse product data", e);
+      }
+    }
+
+    clusterContainer.innerHTML = '';
+    // Reset Image Preview
+    imagePreview.style.backgroundImage = null;
+    imagePreview.style.display = 'none';
+    imagePlaceholder.style.display = 'flex';
+    document.getElementById('pImage').value = '';
+
+    if (product) {
+      drawerTitle.textContent = 'Edit Product';
+      pName.value = product.name || '';
+      pSku.value = product.sku || '';
+      pPrice.value = (product.price || '').toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+      pStock.checked = product.in_stock !== false;
+      pImageUrl.value = product.image_url || '';
+
+      if (product.image_url) {
+        imagePreview.style.backgroundImage = `url(${product.image_url})`;
+        imagePreview.style.display = 'block';
+        imagePlaceholder.style.display = 'none';
+      }
+
+      if (product.clusters && product.clusters.length > 0) {
+        product.clusters.forEach(c => addClusterRow(c));
+      } else {
+        addClusterRow();
+      }
+    } else {
+      drawerTitle.textContent = 'New Product';
+      pName.value = '';
+      pSku.value = '';
+      pPrice.value = '';
+      pStock.checked = true;
+      pImageUrl.value = '';
+      addClusterRow();
+    }
+    drawerOverlay.classList.add('open');
+  }
+
+  function closeDrawer() {
+    drawerOverlay.classList.remove('open');
+  }
+
+  drawerOverlay.addEventListener('click', (e) => {
+    if (e.target === drawerOverlay) closeDrawer();
+  });
+
+  function addClusterRow(data = {}) {
+    const rowId = 'row-' + Math.random().toString(36).substr(2, 9);
+    const div = document.createElement('div');
+    div.className = 'cluster-card';
+    div.id = rowId;
+
+    div.innerHTML = `
+      <div class="cluster-card-header">
+        <div class="cluster-card-title">
+            <div class="cluster-icon-box">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg>
+            </div>
+            <span>Location Configuration</span>
+        </div>
+        <button type="button" class="cluster-delete-btn-premium" onclick="document.getElementById('${rowId}').remove()" title="Remove Location">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+        </button>
+      </div>
+      <div class="cluster-card-body">
+        <div class="cluster-card-section">
+            <div class="form-group">
+                <label class="text-xs text-muted mb-1 block">City</label>
+                <select name="cluster_city" class="form-input" required>
+                    <option value="" disabled ${!data.city ? 'selected' : ''}>Select City</option>
+                    <option value="Port Harcourt (PH)" ${data.city === 'Port Harcourt (PH)' || data.city === 'PH' ? 'selected' : ''}>Port Harcourt (PH)</option>
+                    <option value="Lagos Mainland" ${data.city === 'Lagos Mainland' ? 'selected' : ''}>Lagos Mainland</option>
+                    <option value="Lagos Island" ${data.city === 'Lagos Island' ? 'selected' : ''}>Lagos Island</option>
+                    <option value="Abuja" ${data.city === 'Abuja' ? 'selected' : ''}>Abuja</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label class="text-xs text-muted mb-1 block">Area (Optional)</label>
+                <input type="text" name="cluster_area" value="${data.area || ''}" placeholder="e.g. Lekki" class="form-input">
+            </div>
+        </div>
+        <div class="cluster-card-section" style="background: rgba(255,255,255,0.01); border-radius: 8px; padding: 0.5rem;">
+            <div class="form-group">
+                <label class="text-xs text-muted mb-1 block">Min. Units</label>
+                <div style="display: flex; align-items: center; gap: 0.5rem;">
+                    <input type="number" name="cluster_units" value="${data.units_per_cluster || 1}" class="form-input" required style="flex: 1;">
+                    <div class="text-xs text-muted">Box/Unit</div>
+                </div>
+            </div>
+            <div class="form-group">
+                <label class="text-xs text-muted mb-1 block">Max. People</label>
+                 <div style="display: flex; align-items: center; gap: 0.5rem;">
+                    <input type="number" name="cluster_people" value="${data.people_per_cluster || 4}" class="form-input" required style="flex: 1;">
+                    <div class="text-xs text-muted">Slots</div>
+                </div>
+            </div>
+        </div>
+      </div>
+    `;
+    clusterContainer.appendChild(div);
+  }
+
+  // Message removal logic
+  if (window.location.search.includes('msg=')) {
+    setTimeout(() => {
+      const url = new URL(window.location);
+      url.searchParams.delete('msg');
+      window.history.replaceState({}, '', url);
+    }, 3000);
+  }
+
+  // Auto-open if edit product is provided
+  {% if edit_product %}
+  openDrawer({{ edit_product | tojson | forceescape | safe }});
+  {% endif %}
+</script>
+{% endblock %}

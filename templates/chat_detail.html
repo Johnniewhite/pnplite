@@ -1,0 +1,269 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="dashboard-header animate-slide-up">
+  <div class="flex items-center gap-4">
+    <a href="/ui/admin/chats" class="btn-icon" style="background: rgba(255,255,255,0.05);">
+      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none"
+        stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M19 12H5" />
+        <path d="M12 19l-7-7 7-7" />
+      </svg>
+    </a>
+    <div>
+      <h1 class="gradient-text" style="font-size: 1.5rem;">{{ member.name or 'Direct Chat' }}</h1>
+      <p class="text-secondary text-xs font-mono">{{ phone }}</p>
+    </div>
+  </div>
+  <div class="header-actions">
+    <span class="pill pill-info" style="font-size: 0.7rem;">{{ member.city or 'No City' }}</span>
+    <span class="pill pill-neutral" style="font-size: 0.7rem;">{{ member.membership_type or 'Regular' }}</span>
+  </div>
+</div>
+
+<div class="chat-container-premium animate-fade-in">
+  <div id="chat-log" class="chat-log-premium">
+    {% for m in messages %}
+    <div class="bubble-wrapper {{ 'out' if m.direction == 'out' else 'in' }}">
+      <div class="chat-bubble {{ 'bubble-primary' if m.direction == 'out' else 'bubble-glass' }}">
+        {% if m.body %}
+        <div class="bubble-text">{{ m.body }}</div>
+        {% endif %}
+
+        {% if m.media_url %}
+        <div class="bubble-media">
+          {% set media_lower = m.media_url|lower %}
+          {% if media_lower.endswith('.jpg') or media_lower.endswith('.jpeg') or media_lower.endswith('.png') or
+          media_lower.endswith('.gif') or media_lower.endswith('.webp') %}
+          <img src="{{ m.media_url }}" alt="Attachment" onclick="window.open(this.src, '_blank')">
+          {% else %}
+          <a href="{{ m.media_url }}" target="_blank" class="media-link">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
+              stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path
+                d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+            </svg>
+            <span>Attachment</span>
+          </a>
+          {% endif %}
+        </div>
+        {% endif %}
+      </div>
+      <div class="bubble-time">{{ m.ts | datetimeformat }}</div>
+    </div>
+    {% endfor %}
+    {% if not messages %}
+    <div class="empty-state-chat">
+      <p>No messages in this conversation yet.</p>
+    </div>
+    {% endif %}
+  </div>
+
+  <div class="composer-wrapper">
+    <form method="post" action="/ui/admin/chat" enctype="multipart/form-data" class="premium-composer">
+      <input type="hidden" name="phone" value="{{ phone }}">
+      <div class="input-container">
+        <input type="text" name="body" placeholder="Type a message..." required class="composer-input">
+      </div>
+      <div class="composer-actions">
+        <label class="btn-icon-label" title="Attach file">
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none"
+            stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path
+              d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+          </svg>
+          <input type="file" name="media_file" accept="image/*,application/pdf" style="display:none;">
+        </label>
+        <button type="submit" class="btn btn-primary btn-round">
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none"
+            stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="22" y1="2" x2="11" y2="13" />
+            <polyline points="22 2 15 22 11 13 2 9 22 2" />
+          </svg>
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<style>
+  .chat-container-premium {
+    background: var(--bg-card);
+    border: var(--glass-border);
+    border-radius: var(--radius-lg);
+    height: 70vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    backdrop-filter: blur(20px);
+  }
+
+  .chat-log-premium {
+    flex: 1;
+    overflow-y: auto;
+    padding: 2rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+    background: rgba(0, 0, 0, 0.2);
+  }
+
+  .bubble-wrapper {
+    display: flex;
+    flex-direction: column;
+    max-width: 80%;
+  }
+
+  .bubble-wrapper.out {
+    align-self: flex-end;
+    align-items: flex-end;
+  }
+
+  .bubble-wrapper.in {
+    align-self: flex-start;
+    align-items: flex-start;
+  }
+
+  .chat-bubble {
+    padding: 0.75rem 1.25rem;
+    border-radius: 1.25rem;
+    position: relative;
+  }
+
+  .bubble-primary {
+    background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+    color: white;
+    box-shadow: 0 4px 15px rgba(99, 102, 241, 0.4);
+  }
+
+  .bubble-wrapper.out .chat-bubble {
+    border-bottom-right-radius: 0.25rem;
+  }
+
+  .bubble-glass {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: var(--text-primary);
+  }
+
+  .bubble-wrapper.in .chat-bubble {
+    border-bottom-left-radius: 0.25rem;
+  }
+
+  .bubble-text {
+    white-space: pre-line;
+    line-height: 1.5;
+  }
+
+  .bubble-media {
+    margin-top: 0.5rem;
+  }
+
+  .bubble-media img {
+    max-width: 100%;
+    max-height: 300px;
+    border-radius: 0.75rem;
+    cursor: pointer;
+    transition: transform 0.2s;
+  }
+
+  .bubble-media img:hover {
+    transform: scale(1.02);
+  }
+
+  .media-link {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    color: inherit;
+    text-decoration: underline;
+    font-size: 0.85rem;
+  }
+
+  .bubble-time {
+    font-size: 0.65rem;
+    color: var(--text-muted);
+    margin-top: 0.4rem;
+    padding: 0 0.25rem;
+  }
+
+  .composer-wrapper {
+    padding: 1.5rem;
+    background: rgba(255, 255, 255, 0.02);
+    border-top: var(--glass-border-light);
+  }
+
+  .premium-composer {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    background: rgba(255, 255, 255, 0.05);
+    padding: 0.5rem 0.5rem 0.5rem 1.5rem;
+    border-radius: 99px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+  }
+
+  .input-container {
+    flex: 1;
+  }
+
+  .composer-input {
+    width: 100%;
+    background: transparent;
+    border: none;
+    color: var(--text-primary);
+    outline: none;
+    padding: 0.5rem 0;
+  }
+
+  .composer-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .btn-icon-label {
+    cursor: pointer;
+    color: var(--text-muted);
+    padding: 0.5rem;
+    border-radius: 50%;
+    transition: all 0.2s;
+  }
+
+  .btn-icon-label:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: var(--text-primary);
+  }
+
+  .btn-round {
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    flex-shrink: 0;
+  }
+
+  .empty-state-chat {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-muted);
+    font-style: italic;
+  }
+</style>
+
+<script>
+  (function () {
+    const log = document.getElementById('chat-log');
+    if (log) {
+      log.scrollTop = log.scrollHeight;
+      // Also scroll after images load
+      window.onload = () => { log.scrollTop = log.scrollHeight; };
+    }
+  })();
+</script>
+{% endblock %}

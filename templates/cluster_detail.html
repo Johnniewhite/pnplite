@@ -1,0 +1,148 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="dashboard-header animate-slide-up">
+    <div>
+        <div style="display: flex; align-items: center; gap: 1rem; margin-bottom: 0.5rem;">
+            <a href="/ui/admin/clusters" class="btn-icon"
+                style="background: rgba(255,255,255,0.05); border-radius: 50%; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; color: var(--text-muted);">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
+                    stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="19" y1="12" x2="5" y2="12"></line>
+                    <polyline points="12 19 5 12 12 5"></polyline>
+                </svg>
+            </a>
+            <h1 class="gradient-text" style="margin: 0;">{{ cluster.name }}</h1>
+        </div>
+        <p class="text-secondary">Comprehensive view of cluster members and pooled cart items.</p>
+    </div>
+    <div class="header-actions">
+        <span class="pill pill-success">{{ members | length }} Member(s)</span>
+    </div>
+</div>
+
+<div class="dashboard-grid">
+    <div class="grid-main">
+        <!-- Members List -->
+        <div class="card animate-fade-in">
+            <div class="card-header">
+                <h2>Group Members</h2>
+            </div>
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Member</th>
+                            <th>Phone</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for m in members %}
+                        <tr>
+                            <td>
+                                <div class="flex items-center gap-3">
+                                    <div class="user-avatar">{{ m.name[0] | upper }}</div>
+                                    <span style="font-weight: 600;">{{ m.name }}</span>
+                                </div>
+                            </td>
+                            <td class="font-mono">{{ m.phone }}</td>
+                            <td>
+                                {% if m.status == 'paid' %}
+                                <span class="pill pill-success">Subscriber</span>
+                                {% else %}
+                                <span class="pill pill-neutral">Non-Sub</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Shared Items -->
+        <div class="card animate-fade-in" style="margin-top: 1rem;">
+            <div class="card-header">
+                <h2>Shared Cart Items</h2>
+            </div>
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Product</th>
+                            <th>Quantity</th>
+                            <th>Added By</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for item in cluster['items'] %}
+                        <tr>
+                            <td>
+                                <div style="font-weight: 600;">{{ item.name }}</div>
+                                <div class="text-xs text-muted font-mono">SKU: {{ item.sku }}</div>
+                            </td>
+                            <td><span class="pill pill-info">{{ item.qty }} units</span></td>
+                            <td class="font-mono text-xs">{{ item.added_by }}</td>
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="3" style="text-align: center; padding: 2rem;" class="text-muted">No items in
+                                the shared cart yet.</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div class="grid-side">
+        <div class="card animate-fade-in">
+            <h3>Cluster Info</h3>
+            <div style="display: flex; flex-direction: column; gap: 1rem; margin-top: 1.5rem;">
+                <div class="info-row">
+                    <span class="text-xs text-muted">OWNER</span>
+                    <div style="font-weight: 700;">{{ cluster.owner_name }}</div>
+                    <div class="text-xs font-mono text-muted">{{ cluster.owner_phone }}</div>
+                </div>
+                <div class="info-row">
+                    <span class="text-xs text-muted">CREATED</span>
+                    <div style="font-weight: 600;">{{ cluster.created_at | datetimeformat }}</div>
+                </div>
+                <div class="info-row">
+                    <span class="text-xs text-muted">MAX CAPACITY</span>
+                    <div style="font-weight: 600;">{{ cluster.max_people }} People</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card animate-fade-in">
+            <h3>Quick Actions</h3>
+            <div class="action-stack">
+                <a href="/ui/admin/chat?phone={{ cluster.owner_phone }}" class="action-btn-modern">
+                    <div class="a-icon"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18"
+                            viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                            stroke-linecap="round" stroke-linejoin="round">
+                            <path
+                                d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 1 1-7.6-11.7.5.5 0 0 1 .1 0 8.5 8.5 0 0 1 8.4 7.9z">
+                            </path>
+                        </svg></div>
+                    <span>Message Owner</span>
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    .info-row {
+        padding-bottom: 1rem;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    .info-row:last-child {
+        border-bottom: none;
+    }
+</style>
+{% endblock %}

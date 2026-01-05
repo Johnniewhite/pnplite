@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="dashboard-header animate-slide-up">
+  <div>
+    <h1 class="gradient-text">Active Carts</h1>
+    <p class="text-secondary text-sm">Monitoring {{ carts|length }} real-time shopping sessions.</p>
+  </div>
+</div>
+
+<div class="table-container animate-fade-in">
+  <table class="premium-table">
+    <thead>
+      <tr>
+        <th>Member</th>
+        <th>Cart Contents</th>
+        <th>Last Updated</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for c in carts %}
+      {% set items_list = c['items'] if 'items' in c else [] %}
+      <tr class="clickable-row" onclick="window.location.href='/ui/admin/chat?phone={{ c.phone | urlencode }}'">
+        <td>
+          <div class="flex items-center gap-3">
+            <div class="avatar-sm">
+              {{ (c.name or c.phone)[0].upper() }}
+            </div>
+            <div class="font-mono text-sm" style="color: var(--accent-primary);">{{ c.phone }}</div>
+          </div>
+        </td>
+        <td class="text-sm">
+          {% if items_list %}
+          {% for item in items_list %}
+          <div class="item-badge">{{ item.name or item.sku }} <span class="text-muted">x{{ item.qty }}</span></div>
+          {% endfor %}
+          {% else %}
+          <span class="text-muted italic">Empty session</span>
+          {% endif %}
+        </td>
+        <td class="text-muted text-xs">{{ c.updated_at | datetimeformat }}</td>
+      </tr>
+      {% endfor %}
+      {% if not carts %}
+      <tr>
+        <td colspan="3" class="text-center py-8 text-muted">No active carts at the moment.</td>
+      </tr>
+      {% endif %}
+    </tbody>
+  </table>
+</div>
+
+<style>
+  .avatar-sm {
+    width: 32px;
+    height: 32px;
+    background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-weight: 700;
+    font-size: 0.8rem;
+    box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
+  }
+
+  .item-badge {
+    display: inline-block;
+    padding: 0.1rem 0.4rem;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 4px;
+    margin-right: 0.25rem;
+    margin-bottom: 0.25rem;
+  }
+</style>
+{% endblock %}

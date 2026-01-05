@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="dashboard-header animate-slide-up">
+  <div>
+    <h1 class="gradient-text">Broadcast History</h1>
+    <p class="text-secondary text-sm">Review the performance and logs of your sent global messages.</p>
+  </div>
+</div>
+
+<div class="table-container animate-fade-in">
+  <table class="premium-table">
+    <thead>
+      <tr>
+        <th>Time</th>
+        <th>Target</th>
+        <th>Method</th>
+        <th>Success</th>
+        <th>Errors</th>
+        <th>Content Snippet</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for b in broadcasts %}
+      <tr>
+        <td class="text-muted text-xs">{{ b.created_at | datetimeformat }}</td>
+        <td class="font-medium">{{ b.body or 'Universal' }}</td>
+        <td class="text-xs font-mono">{{ b.template_sid or 'Free-form' }}</td>
+        <td><span class="pill pill-success">{{ b.sent_count }} sent</span></td>
+        <td>
+          {% if b.error_count|int > 0 %}
+          <span class="pill pill-danger">{{ b.error_count }} failed</span>
+          {% else %}
+          <span class="text-muted text-xs">0 errors</span>
+          {% endif %}
+        </td>
+        <td class="text-xs text-muted">
+          <div style="max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"
+            title="{{ b.message }}">
+            {{ b.message }}
+          </div>
+        </td>
+      </tr>
+      {% endfor %}
+      {% if not broadcasts %}
+      <tr>
+        <td colspan="6" class="text-center py-8 text-muted">No broadcast history available.</td>
+      </tr>
+      {% endif %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

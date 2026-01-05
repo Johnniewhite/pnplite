@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="flex justify-between items-center mb-4">
+  <h2>Delivery Status <span class="text-muted text-sm" style="font-weight:400; margin-left:0.5rem;">(latest {{
+      statuses|length }})</span></h2>
+</div>
+
+<div class="table-container">
+  <table>
+    <thead>
+      <tr>
+        <th>Time</th>
+        <th>Message SID</th>
+        <th>Status</th>
+        <th>To</th>
+        <th>Error</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for s in statuses %}
+      <tr>
+        <td class="text-muted text-sm">{{ s.ts | datetimeformat }}</td>
+        <td class="font-mono text-sm">{{ s.message_sid }}</td>
+        <td>
+          {% if s.status == 'failed' or s.status == 'undelivered' %}
+          <span class="pill pill-danger">{{ s.status }}</span>
+          {% elif s.status == 'read' or s.status == 'delivered' %}
+          <span class="pill pill-success">{{ s.status }}</span>
+          {% else %}
+          <span class="pill pill-neutral">{{ s.status }}</span>
+          {% endif %}
+        </td>
+        <td>{{ s.to or '' }}</td>
+        <td>{% if s.error_code %}<span class="pill pill-danger">{{ s.error_code }}</span> {{ s.error_message or '' }}{%
+          endif %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

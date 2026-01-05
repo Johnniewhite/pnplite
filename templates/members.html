@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="dashboard-header animate-slide-up">
+  <div>
+    <h1 class="gradient-text">Members</h1>
+    <p class="text-secondary text-sm">Managing the latest {{ members|length }} community members.</p>
+  </div>
+</div>
+
+<div class="table-container animate-fade-in">
+  <table class="premium-table">
+    <thead>
+      <tr>
+        <th>Joined</th>
+        <th>Member</th>
+        <th>City</th>
+        <th>Tier</th>
+        <th>Payment</th>
+        <th>Referral</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for m in members %}
+      <tr class="clickable-row" onclick="window.location.href='/ui/admin/chat?phone={{ m.phone | urlencode }}'">
+        <td class="text-muted text-xs">{{ m.join_date }}</td>
+        <td>
+          <div class="flex items-center gap-3">
+            <div class="avatar-sm">
+              {{ (m.name or m.phone)[0].upper() }}
+            </div>
+            <div>
+              <div class="font-bold">{{ m.name or 'Unnamed Member' }}</div>
+              <div class="text-xs text-muted font-mono">{{ m.phone }}</div>
+            </div>
+          </div>
+        </td>
+        <td class="text-sm">{{ m.city or '---' }}</td>
+        <td>
+          {% if m.membership_type %}
+          <span class="pill pill-neutral">{{ m.membership_type }}</span>
+          {% else %}
+          <span class="text-muted text-xs">Regular</span>
+          {% endif %}
+        </td>
+        <td>
+          {% if m.payment_status == 'paid' %}
+          <span class="pill pill-success">PAID</span>
+          {% else %}
+          <span class="pill pill-warning">{{ m.payment_status or '---' }}</span>
+          {% endif %}
+        </td>
+        <td>
+          <span class="font-mono text-xs" style="color: var(--accent-primary);">{{ m.referral_code or '---' }}</span>
+        </td>
+      </tr>
+      {% endfor %}
+      {% if not members %}
+      <tr>
+        <td colspan="6" class="text-center py-8 text-muted">No members found.</td>
+      </tr>
+      {% endif %}
+    </tbody>
+  </table>
+</div>
+
+<style>
+  .avatar-sm {
+    width: 32px;
+    height: 32px;
+    background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-weight: 700;
+    font-size: 0.8rem;
+    box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
+  }
+</style>
+{% endblock %}
