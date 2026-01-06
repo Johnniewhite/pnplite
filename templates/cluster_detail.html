@@ -95,6 +95,55 @@
                 </table>
             </div>
         </div>
+
+        <!-- Order History -->
+        <div class="card animate-fade-in" style="margin-top: 1rem;">
+            <div class="card-header">
+                <h2>Order History</h2>
+                <span class="pill pill-neutral">{{ orders|length }} orders</span>
+            </div>
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Order</th>
+                            <th>Total</th>
+                            <th>Paid</th>
+                            <th>Status</th>
+                            <th>Created</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for o in orders %}
+                        <tr>
+                            <td>
+                                <div style="font-weight: 700;">{{ o.slug or o._id[:8] }}</div>
+                                <div class="text-xs text-muted font-mono">{{ o._id }}</div>
+                            </td>
+                            <td>₦{{ o.total | int | comma }}</td>
+                            <td>
+                                {% if o.paid_amount %}
+                                <span class="pill pill-success">₦{{ o.paid_amount | int | comma }}</span>
+                                {% else %}
+                                <span class="pill pill-neutral">₦0</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <span class="pill {% if o.status in ['PAID','paid'] %}pill-success{% elif o.status in ['WAITING_PAYMENT','pending'] %}pill-warning{% else %}pill-neutral{% endif %}">
+                                    {{ o.status or 'NEW' }}
+                                </span>
+                            </td>
+                            <td class="text-xs text-muted font-mono">{{ o.created_at | datetimeformat }}</td>
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="5" style="text-align: center; padding: 2rem;" class="text-muted">No orders yet for this cluster.</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
     </div>
 
     <div class="grid-side">

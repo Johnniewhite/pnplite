@@ -471,10 +471,20 @@ async def ui_cluster_detail(
             })
         else:
             members.append({"phone": phone, "name": "Non-Member", "status": "N/A"})
+
+    # Fetch order history for this cluster
+    orders = await db.orders.find({"cluster_id": cluster_id}).sort("created_at", -1).limit(50).to_list(length=50)
+    for o in orders:
+        o["_id"] = str(o["_id"])
+        # Normalize totals and paid tracking
+        o["total"] = o.get("total") or 0
+        o["paid_kobo"] = o.get("cluster_paid_amount_kobo") or 0
+        o["paid_amount"] = o["paid_kobo"] / 100
+        o["created_at_fmt"] = o.get("created_at")
             
     return templates.TemplateResponse(
         "cluster_detail.html",
-        {"request": request, "admin": admin, "cluster": cluster, "members": members, "active": "clusters"},
+        {"request": request, "admin": admin, "cluster": cluster, "members": members, "orders": orders, "active": "clusters"},
     )
 
 
