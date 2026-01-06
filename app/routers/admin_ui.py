@@ -37,7 +37,17 @@ def datetimeformat(value):
         return value.strftime("%b %d, %H:%M")
     return value
 
+
+def comma(value):
+    """Format number with comma separators"""
+    try:
+        return "{:,}".format(int(value))
+    except (ValueError, TypeError):
+        return value
+
+
 templates.env.filters["datetimeformat"] = datetimeformat
+templates.env.filters["comma"] = comma
 
 
 def require_db():
