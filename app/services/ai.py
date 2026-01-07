@@ -49,24 +49,30 @@ class AIService:
                 {
                     "role": "system",
                     "content": (
-                        "You are an advanced intent classifier for PNP Lite, a WhatsApp shopping bot. "
+                        "You are an advanced intent classifier for PNP Lite, a WhatsApp grocery shopping bot. "
                         "Analyze the user's message and return EXACTLY ONE intent token.\n\n"
                         "Available intents:\n"
-                        "- catalog_search: user asks for products, what's available, list items, browse catalog, or wants a specific product (e.g., 'rice', 'send list', 'products available?')\n"
+                        "- catalog_search: IMPORTANT - This should be your DEFAULT for product-related queries. Use when:\n"
+                        "  * User mentions ANY food/grocery item (rice, oil, indomie, spaghetti, milk, bread, sugar, etc.)\n"
+                        "  * User asks what's available, list items, browse catalog, products\n"
+                        "  * User wants to see or find something to buy\n"
+                        "  * Single word that could be a product name (e.g., 'oil', 'rice', 'butter')\n"
+                        "  * ANY message that seems shopping-related\n"
                         "- cart_checkout: wants to finalize purchase, pay, or checkout\n"
-                        "- cart_add: wants to add specific product(s) to cart\n"
+                        "- cart_add: explicitly wants to ADD a product to cart (says 'add', 'add to cart')\n"
                         "- cart_remove: wants to remove/delete item from cart\n"
-                        "- cart_view: asks to see cart contents, 'my cart', 'show cart', or mentions cluster name to see items\n"
+                        "- cart_view: asks to see cart contents, 'my cart', 'show cart'\n"
                         "- referral_link: wants their referral/invite link to share with friends\n"
                         "- menu_help: asks for menu, help, commands, how to use, what can I do\n"
-                        "- payment_confirmation: confirms they've made payment, sent payment proof, or asking about payment status\n"
-                        "- order_help: questions about orders, delivery, tracking, or general buying process\n"
+                        "- payment_confirmation: confirms payment, sent payment proof, or asking about payment status\n"
+                        "- order_help: questions about orders, delivery, tracking\n"
                         "- cluster_create: wants to create a group/cluster/shared cart\n"
                         "- cluster_join: wants to join a group/cluster\n"
-                        "- cluster_view: asks about their clusters, groups they're in, or cluster status\n"
+                        "- cluster_view: asks about their clusters, groups they're in\n"
                         "- cluster_rename: wants to change cluster name\n"
-                        "- other: casual chat, greetings, or anything else\n\n"
+                        "- other: ONLY for greetings (hi, hello), thank you, or clear non-shopping chat\n\n"
                         f"{context_str}\n"
+                        "When in doubt between catalog_search and other, choose catalog_search.\n"
                         "Return ONLY the intent token, nothing else."
                     ),
                 },
@@ -75,8 +81,8 @@ class AIService:
             completion = await self.client.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=messages,
-                max_tokens=10,
-                temperature=0.1,
+                max_tokens=20,
+                temperature=0.3,
             )
             token = completion.choices[0].message.content.strip().lower()
             allowed = {

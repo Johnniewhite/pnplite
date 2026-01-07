@@ -1070,13 +1070,16 @@ class WhatsAppService:
             )
 
         if state == "awaiting_city":
-            city_value = body_clean
+            city_value = None
+            # Try AI extraction first
             if self.ai_service:
                 extracted_city = await self.ai_service.extract_city(body_clean, allowed=["PH", "Port Harcourt", "Lagos", "Abuja"])
                 if extracted_city:
                     city_value = extracted_city
                     ai_used = True
-            else:
+
+            # Fallback to keyword matching only if AI fails
+            if not city_value:
                 lower_city = body_clean.lower()
                 if "ph" in lower_city or "harcourt" in lower_city:
                     city_value = "PH"
@@ -1084,6 +1087,9 @@ class WhatsAppService:
                     city_value = "Lagos"
                 elif "abuja" in lower_city:
                     city_value = "Abuja"
+                else:
+                    # If still no match, just use what they typed
+                    city_value = body_clean
 
             await self.upsert_member_state(phone, {"city": city_value, "state": "awaiting_membership"})
             friendly_name = member.get("name") or ""
@@ -1097,19 +1103,24 @@ class WhatsAppService:
             )
 
         if state == "awaiting_membership":
-            text = body_clean.lower()
             membership = None
-            if "life" in text or "50" in text:
-                membership = "lifetime"
-            elif "month" in text or "5k" in text:
-                membership = "monthly"
-            elif "one" in text or "once" in text or "2k" in text:
-                membership = "onetime"
-            elif self.ai_service:
+            # Try AI first
+            if self.ai_service:
                 extracted_membership = await self.ai_service.extract_membership(body_clean)
                 if extracted_membership:
                     membership = extracted_membership
                     ai_used = True
+
+            # Fallback to simple keyword matching only if AI fails
+            if not membership:
+                text = body_clean.lower()
+                if "life" in text or "50" in text:
+                    membership = "lifetime"
+                elif "month" in text or "5k" in text:
+                    membership = "monthly"
+                elif "one" in text or "once" in text or "2k" in text:
+                    membership = "onetime"
+
             if not membership:
                 return (
                     "I can set you up with Lifetime (₦50k), Monthly (₦5k), or One-time (₦2k). Which do you want?",
@@ -1272,7 +1283,7 @@ class WhatsAppService:
             await self.upsert_member_state(phone, {"current_cluster_id": None})
             return ("You've left the cluster. You are now using your personal cart.", "idle", state_before, "cluster_leave", False)
 
-        # PRIMARY: Use AI for intent classification
+        # Use AI for intent classification
         if self.ai_service:
             # Build rich context for AI
             personal_cart = await self.db.carts.find_one({"phone": phone}) or {}
@@ -1288,26 +1299,19 @@ class WhatsAppService:
                 intent_guess = ai_intent
                 ai_used = True
             else:
-                # AI failed, log and continue to fallback
+                # AI failed - treat as general chat/inquiry
                 print(f"AI intent classification returned None for message: {body_clean[:50]}")
-        else:
-            # No AI service available - this should be rare in production
-            print("WARNING: AI service not available, using keyword fallback")
-
-        # FALLBACK: Minimal keyword matching only if AI completely failed
-        if not intent_guess:
-            if any(keyword in lower for keyword in ["menu", "help", "command"]):
-                intent_guess = "menu_help"
-            elif any(keyword in lower for keyword in ["product", "catalog", "catalogue", "list", "what do you", "available"]):
-                intent_guess = "catalog_search"
-                product_query = ""
-            elif any(keyword in lower for keyword in ["cart", "basket"]):
-                intent_guess = "cart_view"
-            elif any(keyword in lower for keyword in ["checkout", "pay", "buy now"]):
-                intent_guess = "cart_checkout"
-            else:
-                # Ultimate fallback - treat as catalog search or general inquiry
                 intent_guess = "other"
+        else:
+            # No AI service available - critical error
+            print("CRITICAL: AI service not available - cannot process intent")
+            return (
+                "I'm having trouble understanding messages right now. Please try again in a moment.",
+                "idle",
+                state_before,
+                "ai_unavailable",
+                False
+            )
 
         # Set product query for catalog searches
         if intent_guess == "catalog_search":
@@ -1315,16 +1319,19 @@ class WhatsAppService:
 
         # MENU/HELP Intent
         if intent_guess == "menu_help":
+            name = member.get("name", "")
+            greeting = f"Hey {name}! " if name else "Hi! "
             help_text = (
-                "*Welcome to PNP Lite!* 🛒\n\n"
-                "*What you can do:*\n"
-                "• Type product names to search and add to cart\n"
-                "• Say *'show cart'* to view your items\n"
-                "• Say *'checkout'* to place your order\n"
-                "• Say *'products'* or *'catalog'* to browse\n"
-                "• Say *'referral'* to share with friends\n"
-                "• Ask about creating or joining shopping clusters\n\n"
-                "*Need help?* Just ask me anything!"
+                f"{greeting}Here's what I can help you with:\n\n"
+                "🛒 *Shopping*\n"
+                "Just type what you're looking for (rice, oil, indomie, etc.) and I'll show you what's available\n\n"
+                "🛍️ *Your Cart*\n"
+                "Say 'cart' to see your items or 'checkout' when ready to order\n\n"
+                "👥 *Shopping Clusters*\n"
+                "Create or join groups to shop together and save\n\n"
+                "🔗 *Share & Earn*\n"
+                "Say 'referral' to get your invite link\n\n"
+                "Type what you need and let's get started!"
             )
             return (help_text, "idle", state_before, "menu_help", ai_used)
 
@@ -1678,26 +1685,23 @@ class WhatsAppService:
 
         # 4. Product Search
         if intent_guess == "catalog_search" or product_query is not None:
-            # Basic keyword fallback if not set by main block
+            # Use the entire message as the product query
             if product_query is None:
-                search_triggers = ("search ", "find ", "need ", "want ", "looking", "buy", "order ", "what do you have", "what do you sell", "products", "items")
-                for trig in search_triggers:
-                    if lower.startswith(trig) or trig in lower:
-                        product_query = body_clean
-                        break
-                if product_query is None:
-                    product_query = body_clean
+                product_query = body_clean
 
             # Perform search
             # Use unified search_products (even for empty query to get featured list matched to city)
+            original_query = product_query
             results = await self.search_products(product_query, member.get("city"))
-            
+
             # If no results, ask AI to refine extraction
             if not results and self.ai_service and product_query:
                 extracted_q = await self.ai_service.extract_product_query(body_clean)
                 if extracted_q is not None and extracted_q != product_query:
                     results = await self.search_products(extracted_q, member.get("city"))
-            
+                    if results:
+                        product_query = extracted_q  # Update to show what we searched for
+
             # FINAL FALLBACK: If intent was catalog_search or we are broad, show featured (limited to city)
             if not results and (intent_guess == "catalog_search" or product_query == ""):
                 results = await self.search_products("", member.get("city"))
@@ -1746,6 +1750,26 @@ class WhatsAppService:
                     reply += "\nAdd this to your cart? Reply ADD or CHECKOUT."
                     return (reply, "awaiting_cart_action", state_before, "catalogue_search", True)
                 return (reply, "idle", state_before, "catalogue_search", True)
+            else:
+                # No products found at all
+                if original_query:
+                    return (
+                        f"Sorry, I couldn't find any products matching '{original_query}' in {member.get('city', 'your area')}. "
+                        "Our catalog is being updated regularly. Would you like to browse other products? Type 'catalog' to see all available items.",
+                        "idle",
+                        state_before,
+                        "catalog_no_results",
+                        ai_used
+                    )
+                else:
+                    return (
+                        f"We're still building our catalog for {member.get('city', 'your area')}. "
+                        "Check back soon or contact support for specific products you need!",
+                        "idle",
+                        state_before,
+                        "catalog_empty",
+                        ai_used
+                    )
 
         # 5. General AI Chat / FAQ
         owned_clusters = [c["name"] for c in await self.get_user_clusters(phone) if c["owner_phone"] == phone]
@@ -1768,8 +1792,16 @@ class WhatsAppService:
             if ai_reply:
                 return (ai_reply, "idle", state_before, "ai_chat", True)
 
+        # Final fallback with helpful suggestions
+        name = context.get("member_name", "")
+        greeting = f"Hey {name}! " if name else "Hi there! "
         return (
-            "I'm not sure how to help with that. Try searching for a product, checking your cart, or replying MENU.",
+            f"{greeting}I can help you with:\n"
+            "• Browse products - just type what you're looking for (rice, oil, etc.)\n"
+            "• View your cart - say 'cart'\n"
+            "• Checkout - say 'checkout'\n"
+            "• Get help - say 'menu'\n\n"
+            "What would you like to do?",
             "idle",
             state_before,
             "fallback",
