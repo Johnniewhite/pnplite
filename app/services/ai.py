@@ -37,39 +37,57 @@ class AIService:
     async def classify_intent(self, user_message: str, context: Optional[Dict[str, Any]] = None) -> Optional[str]:
         """
         Classify user intent including cart interactions and custom clusters.
-        Returns one of: catalog_search, cart_checkout, cart_add, cart_remove, cart_view, referral_link, order_help, cluster_create, cluster_join, other.
+        Returns one of: catalog_search, cart_checkout, cart_add, cart_remove, cart_view, referral_link,
+        order_help, cluster_create, cluster_join, menu_help, payment_confirmation, other.
         """
         try:
+            context_str = ""
+            if context:
+                context_str = f"User context: in_cluster={context.get('in_cluster')}, has_personal_items={context.get('has_personal_items')}, payment_status={context.get('payment_status')}"
+
             messages = [
                 {
                     "role": "system",
-                    "content": "You are an intent classifier for a commerce bot. "
-                    "Return exactly one token from {catalog_search, cart_checkout, cart_add, cart_remove, cart_view, referral_link, order_help, cluster_create, cluster_join, cluster_view, cluster_rename, other}. "
-                    "catalog_search: user asks for products, what do you have, list items, browse, or wants a specific product. "
-                    "cart_checkout: wants to finalize or checkout. "
-                    "cart_add: wants to add specific product(s) to cart. "
-                    "cart_remove: wants to remove/delete item from cart. "
-                    "cart_view: asks what is in cart, show cart, my items, 'other' cart, or mentions a specific cluster name to see its items. "
-                    "referral_link: wants their referral or invite link, wants to refer a friend. "
-                    "order_help: general buying/price/order questions. "
-                    "cluster_create: user wants to create a group, cluster, or shared cart with friends. "
-                    "cluster_view: user asks about their clusters, groups they are in, or cluster status. "
-                    "cluster_rename: user wants to change the name of their cluster. "
-                    "other: casual chat or anything else. "
-                    f"Context: {context}",
+                    "content": (
+                        "You are an advanced intent classifier for PNP Lite, a WhatsApp shopping bot. "
+                        "Analyze the user's message and return EXACTLY ONE intent token.\n\n"
+                        "Available intents:\n"
+                        "- catalog_search: user asks for products, what's available, list items, browse catalog, or wants a specific product (e.g., 'rice', 'send list', 'products available?')\n"
+                        "- cart_checkout: wants to finalize purchase, pay, or checkout\n"
+                        "- cart_add: wants to add specific product(s) to cart\n"
+                        "- cart_remove: wants to remove/delete item from cart\n"
+                        "- cart_view: asks to see cart contents, 'my cart', 'show cart', or mentions cluster name to see items\n"
+                        "- referral_link: wants their referral/invite link to share with friends\n"
+                        "- menu_help: asks for menu, help, commands, how to use, what can I do\n"
+                        "- payment_confirmation: confirms they've made payment, sent payment proof, or asking about payment status\n"
+                        "- order_help: questions about orders, delivery, tracking, or general buying process\n"
+                        "- cluster_create: wants to create a group/cluster/shared cart\n"
+                        "- cluster_join: wants to join a group/cluster\n"
+                        "- cluster_view: asks about their clusters, groups they're in, or cluster status\n"
+                        "- cluster_rename: wants to change cluster name\n"
+                        "- other: casual chat, greetings, or anything else\n\n"
+                        f"{context_str}\n"
+                        "Return ONLY the intent token, nothing else."
+                    ),
                 },
                 {"role": "user", "content": user_message},
             ]
             completion = await self.client.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=messages,
-                max_tokens=6,
-                temperature=0,
+                max_tokens=10,
+                temperature=0.1,
             )
             token = completion.choices[0].message.content.strip().lower()
-            allowed = {"catalog_search", "cart_checkout", "cart_add", "cart_remove", "cart_view", "referral_link", "order_help", "cluster_create", "cluster_join", "cluster_view", "cluster_rename", "other"}
+            allowed = {
+                "catalog_search", "cart_checkout", "cart_add", "cart_remove", "cart_view",
+                "referral_link", "order_help", "cluster_create", "cluster_join",
+                "cluster_view", "cluster_rename", "menu_help", "payment_confirmation", "other"
+            }
             return token if token in allowed else "other"
-        except Exception:
+        except Exception as e:
+            # Log error but don't crash
+            print(f"AI intent classification error: {e}")
             return None
 
     async def extract_cluster_details(self, user_message: str) -> Optional[Dict[str, Any]]:
@@ -131,27 +149,47 @@ class AIService:
 
     async def generate_response(self, user_message: str, context: Dict[str, Any]) -> Optional[str]:
         """
-        Generate a natural response using available context (cart, user info).
+        Generate a natural, contextual response using available user information.
         """
         try:
-            cart_info = "Cart is empty."
+            # Build rich context description
+            cart_info = "empty"
             if context.get("cart_items"):
                 items = [f"{it['name']} x{it['qty']}" for it in context["cart_items"]]
-                cart_info = f"Cart contains: {', '.join(items)}."
-            
+                cart_info = f"{', '.join(items)}"
+
+            # Determine user status
+            payment_status = "unpaid" if not context.get('paid') else "paid"
+            membership_info = context.get('membership') or 'no membership'
+
+            # Build cluster information
+            cluster_info = "not in any cluster"
+            if context.get('current_cluster'):
+                cluster_info = f"currently in cluster '{context.get('current_cluster')}'"
+            elif context.get('owned_clusters') or context.get('joined_clusters'):
+                all_clusters = (context.get('owned_clusters') or []) + (context.get('joined_clusters') or [])
+                cluster_info = f"member of: {', '.join(all_clusters)}"
+
             system_msg = (
-                f"{self.system_prompt} "
-                f"User Info: {context.get('member_name')}, {context.get('member_city')}. "
-                f"Membership: {context.get('membership') or 'None'} (Paid: {context.get('paid')}). "
-                f"Cart: [{cart_info}]. "
-                f"Clusters Owned: {', '.join(context.get('owned_clusters') or []) or 'None'}. "
-                f"Clusters Joined: {', '.join(context.get('joined_clusters') or []) or 'None'}. "
-                f"Active Cart: {'In cluster: ' + context.get('current_cluster') if context.get('current_cluster') else 'Personal Cart'}. "
-                "If they ask for their referral link, providing this format: https://wa.me/[bot_phone]?text=I%20was%20referred%20by%20[Name]. "
-                "If they ask about the cart, summarize it naturally. "
-                "If they ask about their clusters, summarize what they are in. "
-                "If they have membership/paid, do NOT ask for it again. "
-                "If they specifically ask for products and none are provided in context, advise them to use the 'Menu' or 'Search' features, but do NOT invent products."
+                "You are PNP Lite's friendly WhatsApp shopping assistant. Respond naturally and helpfully.\n\n"
+                f"**USER CONTEXT:**\n"
+                f"- Name: {context.get('member_name', 'Unknown')}\n"
+                f"- City: {context.get('member_city', 'Unknown')}\n"
+                f"- Membership: {membership_info} ({payment_status})\n"
+                f"- Cart: {cart_info}\n"
+                f"- Clusters: {cluster_info}\n\n"
+                "**GUIDELINES:**\n"
+                "1. Be conversational, warm, and helpful\n"
+                "2. If they greet you, greet back warmly and ask how you can help\n"
+                "3. If they ask about products, encourage them to search or browse the catalog\n"
+                "4. If they ask about orders/delivery, provide helpful information\n"
+                "5. If they need their referral link, tell them to say 'referral link'\n"
+                "6. If they seem confused, guide them on what they can do\n"
+                "7. Keep responses concise (2-3 sentences max)\n"
+                "8. Use their name occasionally to personalize\n"
+                "9. If payment is unpaid, gently remind them when relevant\n"
+                "10. NEVER invent product names or prices - direct them to search instead\n\n"
+                "Respond naturally to their message based on the context above."
             )
 
             completion = await self.client.chat.completions.create(
@@ -160,11 +198,12 @@ class AIService:
                     {"role": "system", "content": system_msg},
                     {"role": "user", "content": user_message},
                 ],
-                max_tokens=200,
-                temperature=0.5,
+                max_tokens=250,
+                temperature=0.7,
             )
             return completion.choices[0].message.content.strip()
-        except Exception:
+        except Exception as e:
+            print(f"AI generate_response error: {e}")
             return None
 
     async def extract_product_query(self, user_message: str) -> Optional[str]:

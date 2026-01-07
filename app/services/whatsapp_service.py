@@ -1138,9 +1138,11 @@ class WhatsAppService:
                 amount_kobo=amount,
                 metadata=metadata
             )
-            
+
             if pay_link and pay_link.get("authorization_url"):
                 url = pay_link["authorization_url"]
+                # Update state to idle in database since payment is automated
+                await self.upsert_member_state(phone, {"state": "idle"})
                 return (
                     f"Great choice! Please use this link to complete your {membership} membership payment: {url}\n\n"
                     "Once paid, your account will be activated automatically!",
@@ -1188,20 +1190,7 @@ class WhatsAppService:
             state = "idle"
             member["address"] = address_text
             member["state"] = "idle"
-            # Fall through to handle intent classification below
-        if lower in {"price", "prices", "price sheet"}:
-            products = await self.db.products.find({"$or": [{"in_stock": True}, {"in_stock": {"$exists": False}}]}).limit(5).to_list(length=5)
-            if products:
-                await self.send_catalog_cards(phone, products, limit=3)
-                names = ", ".join([p.get("name") for p in products if p.get("name")])
-                return (f"Here are a few products: {names}. Tell me what you want and I'll add it to your cart.", "idle", state_before, "catalogue", ai_used)
-            return ("Tell me what you want and I'll check availability for you.", "idle", state_before, "price", ai_used)
-
-        if any(x in lower for x in {"refer", "referral", "share", "referral link", "refferal", "invite"}):
-             me = member.get("name", "Friend")
-             bot_num = self.settings.twilio_from_number.replace("whatsapp:", "").replace("+", "")
-             link = f"https://wa.me/{bot_num}?text=I%20was%20referred%20by%20{me}"
-             return (f"Share PNP Lite with your friends! Give them this link: {link}", "idle", state_before, "referral", True)
+            # Fall through to AI-based intent classification below
 
         # Cart action shortcut if waiting for confirmation
         if member.get("state") == "awaiting_cart_action":
@@ -1239,17 +1228,20 @@ class WhatsAppService:
             else:
                 return ("Reply ADD to add to cart, CHECKOUT to review your cart, or MORE to continue browsing.", "awaiting_cart_action", state_before, "cart_prompt", ai_used)
 
-        # Product search & General Intent Handling
+        # ============================================
+        # AI-FIRST INTENT CLASSIFICATION
+        # ============================================
+
         product_query = None
         intent_guess = None
-        
-        # Keyword overrides for cluster join
+
+        # CRITICAL KEYWORD OVERRIDES (system-level commands only)
         if "JOIN_CLUSTER_" in body_clean:
             cluster_id = body_clean.split("JOIN_CLUSTER_")[1].strip()
             cluster = await self.get_custom_cluster(cluster_id)
             if not cluster:
                 return ("Sorry, I couldn't find that cluster.", "idle", state_before, "cluster_join_fail", False)
-            
+
             if member.get("payment_status") != "paid":
                 return (
                     "You need an active subscription before joining a shared cluster. Reply UPGRADE to see plans.",
@@ -1258,14 +1250,14 @@ class WhatsAppService:
                     "cluster_join_blocked_unpaid",
                     False,
                 )
-            
+
             if len(cluster.get("members", [])) >= cluster.get("max_people", 5):
                  return (f"Sorry, the cluster '{cluster['name']}' is already full.", "idle", state_before, "cluster_full", False)
-            
+
             if phone not in cluster.get("members", []):
                 cluster["members"].append(phone)
                 await self.save_custom_cluster(cluster)
-            
+
             await self.upsert_member_state(phone, {"current_cluster_id": cluster_id, "state": "idle"})
             return (
                 f"✅ You've joined the cluster '{cluster['name']}'!\n\n"
@@ -1276,33 +1268,98 @@ class WhatsAppService:
                 False
             )
 
-        # Prefer AI intent classification first
+        if lower in {"leave cluster", "exit cluster"}:
+            await self.upsert_member_state(phone, {"current_cluster_id": None})
+            return ("You've left the cluster. You are now using your personal cart.", "idle", state_before, "cluster_leave", False)
+
+        # PRIMARY: Use AI for intent classification
         if self.ai_service:
+            # Build rich context for AI
+            personal_cart = await self.db.carts.find_one({"phone": phone}) or {}
             intent_context = {
                 "in_cluster": member.get("current_cluster_id") is not None,
                 "current_cluster": member.get("current_cluster_id"),
-                "has_personal_items": len((await self.db.carts.find_one({"phone": phone}) or {}).get("items", [])) > 0,
+                "has_personal_items": len(personal_cart.get("items", [])) > 0,
+                "payment_status": member.get("payment_status"),
+                "has_address": bool(member.get("address")),
             }
             ai_intent = await self.ai_service.classify_intent(body_clean, context=intent_context)
             if ai_intent:
                 intent_guess = ai_intent
                 ai_used = True
+            else:
+                # AI failed, log and continue to fallback
+                print(f"AI intent classification returned None for message: {body_clean[:50]}")
+        else:
+            # No AI service available - this should be rare in production
+            print("WARNING: AI service not available, using keyword fallback")
 
-        # Keyword fallbacks only if AI didn't decide
+        # FALLBACK: Minimal keyword matching only if AI completely failed
         if not intent_guess:
-            if lower in {"catalogue", "catalog", "products", "list"}:
-                 intent_guess = "catalog_search"
-                 product_query = ""
-            elif lower in {"cart", "my cart"}:
-                 intent_guess = "cart_view"
-            elif lower in {"checkout", "check out", "pay now"}:
-                 intent_guess = "cart_checkout"
-            elif lower in {"leave cluster", "exit cluster", "personal cart"}:
-                 await self.upsert_member_state(phone, {"current_cluster_id": None})
-                 return ("You've left the cluster. You are now using your personal cart.", "idle", state_before, "cluster_leave", False)
+            if any(keyword in lower for keyword in ["menu", "help", "command"]):
+                intent_guess = "menu_help"
+            elif any(keyword in lower for keyword in ["product", "catalog", "catalogue", "list", "what do you", "available"]):
+                intent_guess = "catalog_search"
+                product_query = ""
+            elif any(keyword in lower for keyword in ["cart", "basket"]):
+                intent_guess = "cart_view"
+            elif any(keyword in lower for keyword in ["checkout", "pay", "buy now"]):
+                intent_guess = "cart_checkout"
+            else:
+                # Ultimate fallback - treat as catalog search or general inquiry
+                intent_guess = "other"
 
+        # Set product query for catalog searches
         if intent_guess == "catalog_search":
             product_query = body_clean
+
+        # MENU/HELP Intent
+        if intent_guess == "menu_help":
+            help_text = (
+                "*Welcome to PNP Lite!* 🛒\n\n"
+                "*What you can do:*\n"
+                "• Type product names to search and add to cart\n"
+                "• Say *'show cart'* to view your items\n"
+                "• Say *'checkout'* to place your order\n"
+                "• Say *'products'* or *'catalog'* to browse\n"
+                "• Say *'referral'* to share with friends\n"
+                "• Ask about creating or joining shopping clusters\n\n"
+                "*Need help?* Just ask me anything!"
+            )
+            return (help_text, "idle", state_before, "menu_help", ai_used)
+
+        # PAYMENT CONFIRMATION Intent
+        if intent_guess == "payment_confirmation":
+            if media_url:
+                # They sent payment proof
+                ref = await self.apply_payment_proof(phone, media_url)
+                return (
+                    f"✅ Payment proof received! Reference: {ref}\n\n"
+                    "Our team will verify and activate your account within 24 hours. Thanks for your patience!",
+                    "idle",
+                    state_before,
+                    "payment_proof_received",
+                    ai_used,
+                )
+            else:
+                # They're asking about payment status
+                if member.get("payment_status") == "paid":
+                    return (
+                        "Your payment is confirmed! ✅ You can start shopping now. Type 'products' to see what's available.",
+                        "idle",
+                        state_before,
+                        "payment_already_confirmed",
+                        ai_used,
+                    )
+                else:
+                    return (
+                        "I see you're asking about payment. If you've already paid via Paystack, it should reflect automatically. "
+                        "If you paid via bank transfer, please send a screenshot of your payment receipt.",
+                        "idle",
+                        state_before,
+                        "payment_status_inquiry",
+                        ai_used,
+                    )
 
         if intent_guess == "cluster_join":
             # Enforce join via invite link only
@@ -1336,83 +1393,78 @@ class WhatsAppService:
                     "cluster_create_name_prompt",
                     True
                 )
-            
-            if intent_guess == "cluster_view":
-                clusters = await self.get_user_clusters(phone)
-                if not clusters:
-                    return (
-                        "You aren't in any clusters yet. Would you like to create one or join a friend's?",
-                        "idle",
-                        state_before,
-                        "cluster_view_empty",
-                        True
-                    )
-                
-                current_cluster_id = member.get("current_cluster_id")
-                active_summary = ""
-                if current_cluster_id:
-                    cluster = await self.get_custom_cluster(current_cluster_id)
-                    if cluster:
-                        active_summary = f"\n\n*Current Active Cluster: {cluster['name']}*\n"
-                        active_summary += self.render_cart_summary({
-                            "cluster_name": cluster['name'],
-                            "items": cluster.get("items") or []
-                        }, with_instructions=False)
 
-                lines = ["*Your Clusters:*"]
-                for c in clusters:
-                    role = "Owner" if c.get("owner_phone") == phone else "Member"
-                    member_count = len(c.get("members", []))
-                    limit = c.get("max_people", 5)
-                    indicator = "🟢 " if str(c.get("_id")) == current_cluster_id else "• "
-                    lines.append(f"{indicator}*{c['name']}* ({role}) - {member_count}/{limit} members")
-                
-                lines.append("\nTo use a cluster's shared cart, just join it using the link provided when it was created.")
-                return ("\n".join(lines) + active_summary, "idle", state_before, "cluster_view", True)
+        if intent_guess == "cluster_view":
+            clusters = await self.get_user_clusters(phone)
+            if not clusters:
+                return (
+                    "You aren't in any clusters yet. Would you like to create one or join a friend's?",
+                    "idle",
+                    state_before,
+                    "cluster_view_empty",
+                    True
+                )
 
-            if intent_guess == "cluster_rename":
-                details = await self.ai_service.extract_cluster_details(body_clean)
-                new_name = details.get("new_name") if details else None
-                
-                if not new_name:
-                    return ("What would you like to rename the cluster to?", "idle", state_before, "cluster_rename_prompt", True)
-                
-                # Check for clusters owned by this user
-                clusters = await self.get_user_clusters(phone)
-                owned = [c for c in clusters if c.get("owner_phone") == phone]
-                
-                if not owned:
-                    return ("You don't own any clusters that can be renamed.", "idle", state_before, "cluster_rename_no_owned", True)
-                
-                # If they own multiple, we might need to ask which one, but for now let's assume the active one or the most recent one
-                target_cluster = None
-                current_cluster_id = member.get("current_cluster_id")
-                if current_cluster_id:
-                    target_cluster = await self.get_custom_cluster(current_cluster_id)
-                    if target_cluster and target_cluster.get("owner_phone") != phone:
-                        target_cluster = None
-                
-                if not target_cluster and owned:
-                    target_cluster = owned[0] # Pick the first/most recent
-                
-                if target_cluster:
-                    old_name = target_cluster.get("name")
-                    target_cluster["name"] = new_name
-                    await self.save_custom_cluster(target_cluster)
-                    return (f"✅ Cluster '{old_name}' has been renamed to '{new_name}'!", "idle", state_before, "cluster_renamed", True)
-                
-                return ("I couldn't find a cluster you own to rename.", "idle", state_before, "cluster_rename_fail", True)
+            current_cluster_id = member.get("current_cluster_id")
+            active_summary = ""
+            if current_cluster_id:
+                cluster = await self.get_custom_cluster(current_cluster_id)
+                if cluster:
+                    active_summary = f"\n\n*Current Active Cluster: {cluster['name']}*\n"
+                    active_summary += self.render_cart_summary({
+                        "cluster_name": cluster['name'],
+                        "items": cluster.get("items") or []
+                    }, with_instructions=False)
 
-            if intent_guess == "referral_link":
-                 me = member.get("name", "Friend")
-                 bot_num = self.settings.twilio_from_number.replace("whatsapp:", "").replace("+", "")
-                 link = f"https://wa.me/{bot_num}?text=I%20was%20referred%20by%20{me}"
-                 return (f"Share PNP Lite with your friends! Give them this link: {link}", "idle", state_before, "referral", True)
-            
-            if intent_guess in {"catalog_search", "cart_add"}:
-                product_query = body_clean
-            elif intent_guess == "cart_view":
-                pass
+            lines = ["*Your Clusters:*"]
+            for c in clusters:
+                role = "Owner" if c.get("owner_phone") == phone else "Member"
+                member_count = len(c.get("members", []))
+                limit = c.get("max_people", 5)
+                indicator = "🟢 " if str(c.get("_id")) == current_cluster_id else "• "
+                lines.append(f"{indicator}*{c['name']}* ({role}) - {member_count}/{limit} members")
+
+            lines.append("\nTo use a cluster's shared cart, just join it using the link provided when it was created.")
+            return ("\n".join(lines) + active_summary, "idle", state_before, "cluster_view", True)
+
+        if intent_guess == "cluster_rename":
+            details = await self.ai_service.extract_cluster_details(body_clean) if self.ai_service else None
+            new_name = details.get("new_name") if details else None
+
+            if not new_name:
+                return ("What would you like to rename the cluster to?", "idle", state_before, "cluster_rename_prompt", True)
+
+            # Check for clusters owned by this user
+            clusters = await self.get_user_clusters(phone)
+            owned = [c for c in clusters if c.get("owner_phone") == phone]
+
+            if not owned:
+                return ("You don't own any clusters that can be renamed.", "idle", state_before, "cluster_rename_no_owned", True)
+
+            # If they own multiple, we might need to ask which one, but for now let's assume the active one or the most recent one
+            target_cluster = None
+            current_cluster_id = member.get("current_cluster_id")
+            if current_cluster_id:
+                target_cluster = await self.get_custom_cluster(current_cluster_id)
+                if target_cluster and target_cluster.get("owner_phone") != phone:
+                    target_cluster = None
+
+            if not target_cluster and owned:
+                target_cluster = owned[0] # Pick the first/most recent
+
+            if target_cluster:
+                old_name = target_cluster.get("name")
+                target_cluster["name"] = new_name
+                await self.save_custom_cluster(target_cluster)
+                return (f"✅ Cluster '{old_name}' has been renamed to '{new_name}'!", "idle", state_before, "cluster_renamed", True)
+
+            return ("I couldn't find a cluster you own to rename.", "idle", state_before, "cluster_rename_fail", True)
+
+        if intent_guess == "referral_link":
+            me = member.get("name", "Friend")
+            bot_num = self.settings.twilio_from_number.replace("whatsapp:", "").replace("+", "")
+            link = f"https://wa.me/{bot_num}?text=I%20was%20referred%20by%20{me}"
+            return (f"Share PNP Lite with your friends! Give them this link: {link}", "idle", state_before, "referral", True)
         
         # HANDLE INTENTS
         
