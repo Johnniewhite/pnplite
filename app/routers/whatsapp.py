@@ -17,7 +17,7 @@ router = APIRouter()
 def get_service(settings: Settings = Depends(get_settings)) -> WhatsAppService:
     if mongo.db is None:
         raise RuntimeError("Mongo client not initialized")
-    ai_service = AIService(settings.openai_api_key) if settings.openai_api_key else None
+    ai_service = AIService(settings.openai_api_key, db=mongo.db) if settings.openai_api_key else None
     return WhatsAppService(mongo.db, settings, ai_service=ai_service)
 
 

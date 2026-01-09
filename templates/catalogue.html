@@ -166,21 +166,26 @@
         <div class="form-section">
           <h4 class="text-xs text-muted uppercase tracking-widest mb-4">Availability & Media</h4>
 
-          <label class="form-checkbox-label mb-4">
-            <input type="checkbox" name="in_stock" id="pStock" class="form-checkbox" value="true" checked>
-            <span>
-              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none"
-                stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"
-                style="margin-right: 0.75rem;">
-                <polyline points="20 6 9 17 4 12"></polyline>
-              </svg>
-              Mark as In Stock
-            </span>
-          </label>
+          <div class="form-group mb-4">
+            <label class="form-label text-sm font-bold mb-2 block">Stock Availability</label>
+            <label class="form-checkbox-label" style="display: flex; align-items: center; cursor: pointer;">
+              <input type="checkbox" name="in_stock" id="pStock" class="form-checkbox" value="true" checked style="width: auto; margin-right: 0.75rem;">
+              <span style="display: flex; align-items: center;">
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none"
+                  stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"
+                  style="margin-right: 0.5rem;">
+                  <polyline points="20 6 9 17 4 12"></polyline>
+                </svg>
+                In Stock
+              </span>
+            </label>
+            <p class="text-xs text-muted mt-2">Toggle to mark product as out of stock</p>
+          </div>
 
           <div class="form-group">
             <label class="form-label text-sm font-bold mb-2 block">Product Image</label>
-            <label class="file-upload-label">
+            <label class="file-upload-label" id="fileUploadLabel" 
+              style="border: 2px dashed rgba(255,255,255,0.2); border-radius: 8px; padding: 2rem; text-align: center; cursor: pointer; transition: all 0.3s;">
               <div id="imagePlaceholder" style="display: flex; flex-direction: column; align-items: center;">
                 <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none"
                   stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"
@@ -189,13 +194,13 @@
                   <circle cx="8.5" cy="8.5" r="1.5"></circle>
                   <polyline points="21 15 16 10 5 21"></polyline>
                 </svg>
-                <span class="text-sm">Click to upload or drag image</span>
+                <span class="text-sm">Click to upload or drag image here</span>
               </div>
               <div id="imagePreview"
                 style="display: none; width: 100%; height: 160px; border-radius: 8px; background-size: cover; background-position: center;">
               </div>
-              <input type="file" name="image_file" id="pImage" accept="image/*" class="form-checkbox"
-                onchange="previewFile()">
+              <input type="file" name="image_file" id="pImage" accept="image/*" style="display: none;"
+                onchange="previewFile(event)">
             </label>
             <input type="hidden" name="image_url" id="pImageUrl">
           </div>
@@ -283,10 +288,54 @@
     });
   });
 
-  function previewFile() {
+  // Click to upload
+  document.getElementById('fileUploadLabel').addEventListener('click', function(e) {
+    if (e.target.tagName !== 'INPUT') {
+      document.getElementById('pImage').click();
+    }
+  });
+
+  // Drag and drop handlers
+  const fileUploadLabel = document.getElementById('fileUploadLabel');
+  ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+    fileUploadLabel.addEventListener(eventName, preventDefaults, false);
+    document.body.addEventListener(eventName, preventDefaults, false);
+  });
+
+  function preventDefaults(e) {
+    e.preventDefault();
+    e.stopPropagation();
+  }
+
+  ['dragenter', 'dragover'].forEach(eventName => {
+    fileUploadLabel.addEventListener(eventName, () => {
+      fileUploadLabel.style.borderColor = 'rgba(99, 102, 241, 0.5)';
+      fileUploadLabel.style.background = 'rgba(99, 102, 241, 0.05)';
+    }, false);
+  });
+
+  ['dragleave', 'drop'].forEach(eventName => {
+    fileUploadLabel.addEventListener(eventName, () => {
+      fileUploadLabel.style.borderColor = 'rgba(255,255,255,0.2)';
+      fileUploadLabel.style.background = 'transparent';
+    }, false);
+  });
+
+  fileUploadLabel.addEventListener('drop', handleDrop, false);
+
+  function handleDrop(e) {
+    const dt = e.dataTransfer;
+    const files = dt.files;
+    if (files.length > 0) {
+      document.getElementById('pImage').files = files;
+      previewFile({ target: { files: files } });
+    }
+  }
+
+  function previewFile(event) {
     const preview = document.getElementById('imagePreview');
     const placeholder = document.getElementById('imagePlaceholder');
-    const file = document.getElementById('pImage').files[0];
+    const file = event ? event.target.files[0] : document.getElementById('pImage').files[0];
     const reader = new FileReader();
 
     reader.onloadend = function () {
@@ -427,7 +476,9 @@
 
   // Auto-open if edit product is provided
   {% if edit_product %}
-  openDrawer({{ edit_product | tojson | forceescape | safe }});
+  window.addEventListener('DOMContentLoaded', function() {
+    openDrawer({{ edit_product | tojson | forceescape | safe }});
+  });
   {% endif %}
 </script>
 {% endblock %}

@@ -758,3 +758,40 @@ async def ui_order_status(
              pass
 
     return RedirectResponse(url=f"/ui/admin/orders/{order_id}", status_code=303)
+
+
+@router.get("/bot-responses")
+async def ui_bot_responses(
+    request: Request,
+    admin: str = Depends(get_current_admin),
+    db=Depends(require_db),
+):
+    """Admin page to edit bot responses and system prompts."""
+    system_prompt = await db.config.find_one({"_id": "bot_system_prompt"})
+    prompt_value = system_prompt.get("value") if system_prompt else None
+    
+    return templates.TemplateResponse(
+        "bot_responses.html",
+        {
+            "request": request,
+            "admin": admin,
+            "system_prompt": prompt_value,
+            "active": "bot_responses"
+        }
+    )
+
+
+@router.post("/bot-responses")
+async def ui_bot_responses_save(
+    request: Request,
+    system_prompt: str = Form(...),
+    admin: str = Depends(get_current_admin),
+    db=Depends(require_db),
+):
+    """Save bot system prompt configuration."""
+    await db.config.update_one(
+        {"_id": "bot_system_prompt"},
+        {"$set": {"value": system_prompt, "updated_at": datetime.utcnow()}},
+        upsert=True
+    )
+    return RedirectResponse(url="/ui/admin/bot-responses?msg=Bot responses updated", status_code=303)

@@ -19,6 +19,9 @@ class WhatsAppService:
     def __init__(self, db: AsyncIOMotorDatabase, settings: Settings, ai_service: Optional[AIService] = None):
         self.db = db
         self.settings = settings
+        # Pass db to AI service if available for dynamic prompt loading
+        if ai_service and hasattr(ai_service, 'db'):
+            ai_service.db = db
         self.ai_service = ai_service
         self.paystack = PaystackService(settings)
         self.twilio = Client(settings.twilio_account_sid, settings.twilio_auth_token)
@@ -233,6 +236,7 @@ class WhatsAppService:
     async def broadcast_all_conversed(self, body: str, media_url: Optional[str] = None) -> Dict[str, Any]:
         """
         Broadcast to all unique phone numbers that have messaged with the bot (from messages collection).
+        Fixed to handle images properly by sending media_url as a list when present.
         """
         phones = await self.db.messages.distinct("phone")
         sent = 0
@@ -244,25 +248,34 @@ class WhatsAppService:
                 params = {
                     "from_": self.settings.twilio_from_number,
                     "to": to_phone,
-                    "body": body,
                 }
+                # Always set body first
+                if body:
+                    params["body"] = body
+                
+                # Add media if provided - Twilio requires media_url as a list
                 if media_url:
-                    params["media_url"] = [media_url]
+                    # Normalize the media URL
+                    normalized_media = self._normalize_media_url(media_url)
+                    params["media_url"] = [normalized_media] if normalized_media else []
+                
                 cb = self._status_callback()
                 if cb:
                     params["status_callback"] = cb
+                
                 resp = self.twilio.messages.create(**params)
                 sids.append(resp.sid)
                 sent += 1
                 await self.log_message(
                     phone=str(phone),
                     direction=MessageDirection.outbound,
-                    body=body,
+                    body=body or ("[media]" if media_url else ""),
                     intent="admin_broadcast_all",
                     state_after="idle",
                     media_url=media_url,
                 )
-            except Exception:
+            except Exception as e:
+                print(f"Broadcast error for {phone}: {e}")
                 errors += 1
                 continue
 
@@ -368,6 +381,50 @@ class WhatsAppService:
 
         products = await self.db.products.find(criteria).sort("name", 1).to_list(length=50)
         return [p for p in products if self._product_visible_for_city(p, member_city)]
+    
+    async def get_product_categories(self) -> Dict[str, List[Dict[str, Any]]]:
+        """Get products grouped by category based on common keywords."""
+        all_products = await self.db.products.find({
+            "$or": [{"in_stock": True}, {"in_stock": {"$exists": False}}]
+        }).to_list(length=1000)
+        
+        categories = {
+            "rice": [],
+            "oil": [],
+            "fish": [],
+            "meat": [],
+            "poultry": [],
+            "vegetables": [],
+            "household": [],
+            "other": []
+        }
+        
+        category_keywords = {
+            "rice": ["rice", "ofada", "basmati", "local"],
+            "oil": ["oil", "vegetable", "palm", "groundnut"],
+            "fish": ["fish", "tilapia", "mackerel", "titus"],
+            "meat": ["meat", "beef", "goat", "mutton"],
+            "poultry": ["chicken", "turkey", "duck", "egg"],
+            "vegetables": ["tomato", "onion", "pepper", "potato", "vegetable"],
+            "household": ["detergent", "soap", "tissue", "toilet", "household"]
+        }
+        
+        for product in all_products:
+            name_lower = (product.get("name") or "").lower()
+            sku_lower = (product.get("sku") or "").lower()
+            text = f"{name_lower} {sku_lower}"
+            
+            categorized = False
+            for cat, keywords in category_keywords.items():
+                if any(kw in text for kw in keywords):
+                    categories[cat].append(product)
+                    categorized = True
+                    break
+            
+            if not categorized:
+                categories["other"].append(product)
+        
+        return categories
 
     async def set_price_sheet_url(self, url: str):
         await self.db.config.update_one(
@@ -973,8 +1030,18 @@ class WhatsAppService:
             )
             
             await self.upsert_member_state(phone, {"phone": phone, "state": "awaiting_name"})
+            intro_message = (
+                "Welcome to PNP Lite! 🎉\n\n"
+                "I'm your WhatsApp shopping assistant. PNP Lite is a group-buying community that gives you access to wholesale prices through coordinated bulk purchasing.\n\n"
+                "*How it works:*\n"
+                "• Shop together with friends in clusters to unlock wholesale prices\n"
+                "• Enjoy doorstep delivery\n"
+                "• Get amazing discounts on groceries and essentials\n"
+                "• Zero stress, no haggling needed\n\n"
+                "To get started, I'll need a few details. What should I call you?"
+            )
             return (
-                "Welcome to PNP Lite! I'm here to help with prices, orders, and delivery updates. What should I call you?",
+                intro_message,
                 "awaiting_name",
                 state_before,
                 "onboard",
@@ -1094,8 +1161,21 @@ class WhatsAppService:
             await self.upsert_member_state(phone, {"city": city_value, "state": "awaiting_membership"})
             friendly_name = member.get("name") or ""
             prefix = f"Great, {friendly_name}! " if friendly_name else "Great! "
+            membership_explanation = (
+                f"{prefix}Now, let's set up your subscription:\n\n"
+                "*Subscription Plans:*\n"
+                "• *Lifetime* - ₦50,000 (One-time payment, lifetime access)\n"
+                "• *Monthly* - ₦5,000 (Renewable monthly subscription)\n"
+                "• *One-time* - ₦2,000 (Single purchase access)\n\n"
+                "All plans give you access to:\n"
+                "✓ Wholesale pricing through group-buying\n"
+                "✓ Priority delivery\n"
+                "✓ Referral bonuses (₦1,000 per referral)\n"
+                "✓ Access to exclusive deals and seasonal bundles\n\n"
+                "Which plan works for you? (Reply: Lifetime / Monthly / One-time)"
+            )
             return (
-                f"{prefix}We have Lifetime ₦50k, Monthly ₦5k, or One-time ₦2k. Which works for you?",
+                membership_explanation,
                 "awaiting_membership",
                 state_before,
                 "membership",
@@ -1283,35 +1363,52 @@ class WhatsAppService:
             await self.upsert_member_state(phone, {"current_cluster_id": None})
             return ("You've left the cluster. You are now using your personal cart.", "idle", state_before, "cluster_leave", False)
 
-        # Use AI for intent classification
+        # Use AI for intent classification - Optimized with timeout/caching
         if self.ai_service:
-            # Build rich context for AI
-            personal_cart = await self.db.carts.find_one({"phone": phone}) or {}
+            # Build rich context for AI - simplified for speed
             intent_context = {
                 "in_cluster": member.get("current_cluster_id") is not None,
-                "current_cluster": member.get("current_cluster_id"),
-                "has_personal_items": len(personal_cart.get("items", [])) > 0,
                 "payment_status": member.get("payment_status"),
-                "has_address": bool(member.get("address")),
             }
-            ai_intent = await self.ai_service.classify_intent(body_clean, context=intent_context)
-            if ai_intent:
-                intent_guess = ai_intent
-                ai_used = True
-            else:
-                # AI failed - treat as general chat/inquiry
-                print(f"AI intent classification returned None for message: {body_clean[:50]}")
-                intent_guess = "other"
+            # Use async AI call with timeout protection
+            try:
+                import asyncio
+                ai_intent = await asyncio.wait_for(
+                    self.ai_service.classify_intent(body_clean, context=intent_context),
+                    timeout=3.0  # 3 second timeout for faster responses
+                )
+                if ai_intent:
+                    intent_guess = ai_intent
+                    ai_used = True
+                else:
+                    # Fallback to keyword matching on timeout/None
+                    if any(kw in lower for kw in ["cart", "basket", "items"]):
+                        intent_guess = "cart_view"
+                    elif any(kw in lower for kw in ["checkout", "pay", "order"]):
+                        intent_guess = "cart_checkout"
+                    elif any(kw in lower for kw in ["add", "put"]):
+                        intent_guess = "cart_add"
+                    else:
+                        intent_guess = "catalog_search"  # Default to search
+            except asyncio.TimeoutError:
+                # Timeout - use keyword fallback
+                if any(kw in lower for kw in ["cart", "basket"]):
+                    intent_guess = "cart_view"
+                elif "checkout" in lower or "pay" in lower:
+                    intent_guess = "cart_checkout"
+                else:
+                    intent_guess = "catalog_search"
+            except Exception as e:
+                print(f"AI intent error: {e}")
+                intent_guess = "catalog_search"  # Safe fallback
         else:
-            # No AI service available - critical error
-            print("CRITICAL: AI service not available - cannot process intent")
-            return (
-                "I'm having trouble understanding messages right now. Please try again in a moment.",
-                "idle",
-                state_before,
-                "ai_unavailable",
-                False
-            )
+            # No AI service - use keyword matching
+            if any(kw in lower for kw in ["cart", "basket"]):
+                intent_guess = "cart_view"
+            elif "checkout" in lower:
+                intent_guess = "cart_checkout"
+            else:
+                intent_guess = "catalog_search"
 
         # Set product query for catalog searches
         if intent_guess == "catalog_search":
@@ -1349,8 +1446,11 @@ class WhatsAppService:
                     ai_used,
                 )
             else:
-                # They're asking about payment status
-                if member.get("payment_status") == "paid":
+                # They're asking about payment status - CHECK ACTUAL STATUS FIRST
+                current_member = await self.get_member(phone)
+                actual_status = current_member.get("payment_status")
+                
+                if actual_status == "paid":
                     return (
                         "Your payment is confirmed! ✅ You can start shopping now. Type 'products' to see what's available.",
                         "idle",
@@ -1360,8 +1460,8 @@ class WhatsAppService:
                     )
                 else:
                     return (
-                        "I see you're asking about payment. If you've already paid via Paystack, it should reflect automatically. "
-                        "If you paid via bank transfer, please send a screenshot of your payment receipt.",
+                        "Your payment status is currently *not confirmed*. If you've already paid via Paystack, it should reflect automatically within a few minutes. "
+                        "If you paid via bank transfer, please send a screenshot of your payment receipt, and we'll verify it manually.",
                         "idle",
                         state_before,
                         "payment_status_inquiry",
@@ -1689,6 +1789,38 @@ class WhatsAppService:
             if product_query is None:
                 product_query = body_clean
 
+            # Check if user is asking to read/view a product page
+            if "product page" in lower or "read product" in lower or "view product" in lower:
+                # Try to extract product name/SKU from message
+                product_ref = product_query.replace("product page", "").replace("read product", "").replace("view product", "").strip()
+                if product_ref:
+                    results = await self.search_products(product_ref, member.get("city"))
+                    if results:
+                        product = results[0]
+                        base_url = self._public_base_url()
+                        product_url = f"{base_url}/ui/admin/catalogue?edit={product.get('sku')}" if base_url else None
+                        
+                        product_info = [
+                            f"*{product.get('name', 'Product')}*",
+                            f"SKU: {product.get('sku', 'N/A')}",
+                            f"Price: ₦{product.get('price', 'N/A')}",
+                            f"Stock: {'✅ In Stock' if product.get('in_stock', True) else '❌ Out of Stock'}"
+                        ]
+                        
+                        clusters = product.get("clusters", [])
+                        if clusters:
+                            product_info.append("\n*Available in:*")
+                            for c in clusters:
+                                city_area = f"{c.get('city', '')}"
+                                if c.get('area'):
+                                    city_area += f" - {c['area']}"
+                                product_info.append(f"• {city_area}")
+                        
+                        if product_url:
+                            product_info.append(f"\n📱 View/Edit: {product_url}")
+                        
+                        return ("\n".join(product_info), "idle", state_before, "product_page_read", True)
+
             # Perform search
             # Use unified search_products (even for empty query to get featured list matched to city)
             original_query = product_query
@@ -1722,12 +1854,33 @@ class WhatsAppService:
                     summary = self.render_cart_summary(cart)
                     return (f"✅ Added {product['name']} (x{qty}) to cart.\n{summary}", "idle", state_before, "cart_add_auto", True)
                 
+                # Generate catalogue URL
+                base_url = self._public_base_url()
+                catalogue_url = f"{base_url}/ui/admin/catalogue" if base_url else None
+                
                 lines = [f"*Available products:*"]
                 for p in results:
-                    price = p.get("price", "N/A")
+                    base_price = p.get("price", 0)
+                    try:
+                        base_price_val = float(str(base_price).replace(",", "").replace("₦", "").strip())
+                    except:
+                        base_price_val = 0
+                    
                     name = p.get("name", "Unknown")
-                    cluster_note = ""
                     clusters = p.get("clusters") or []
+                    
+                    # Calculate slot cost and total cost if cluster info available
+                    price_display = f"₦{base_price_val:,.0f}"
+                    
+                    if clusters:
+                        for c in clusters:
+                            people_per_cluster = c.get("people_per_cluster") or 1
+                            if people_per_cluster > 0:
+                                slot_cost = base_price_val / people_per_cluster
+                                price_display = f"₦{base_price_val:,.0f} (Slot: ₦{slot_cost:,.0f}, Total: ₦{base_price_val:,.0f})"
+                                break
+                    
+                    cluster_note = ""
                     if clusters:
                         snippets = []
                         for c in clusters:
@@ -1739,7 +1892,10 @@ class WhatsAppService:
                             snippets.append(seg)
                         if snippets:
                             cluster_note = " [" + "; ".join(snippets) + "]"
-                    lines.append(f"• {name}: ₦{price}{cluster_note}")
+                    lines.append(f"• {name}: {price_display}{cluster_note}")
+                
+                if catalogue_url:
+                    lines.append(f"\n📱 View full catalogue: {catalogue_url}")
                 
                 reply = "\n".join(lines)
                 await self.send_catalog_cards(phone, results, limit=5)
@@ -1751,11 +1907,31 @@ class WhatsAppService:
                     return (reply, "awaiting_cart_action", state_before, "catalogue_search", True)
                 return (reply, "idle", state_before, "catalogue_search", True)
             else:
-                # No products found at all
+                # No products found - suggest categories
+                categories = await self.get_product_categories()
+                available_categories = [cat for cat, prods in categories.items() if prods and cat != "other"]
+                
+                base_url = self._public_base_url()
+                catalogue_url = f"{base_url}/ui/admin/catalogue" if base_url else None
+                
                 if original_query:
+                    suggestion_lines = [
+                        f"Sorry, I couldn't find '{original_query}' in our current catalog."
+                    ]
+                    
+                    if available_categories:
+                        suggestion_lines.append("\n*Available product categories:*")
+                        for cat in available_categories[:6]:  # Show top 6
+                            cat_name = cat.capitalize()
+                            count = len(categories[cat])
+                            suggestion_lines.append(f"• {cat_name} ({count} items)")
+                    
+                    suggestion_lines.append("\nTry searching for a category like: rice, oil, fish, chicken, etc.")
+                    if catalogue_url:
+                        suggestion_lines.append(f"\n📱 View full catalogue: {catalogue_url}")
+                    
                     return (
-                        f"Sorry, I couldn't find any products matching '{original_query}' in {member.get('city', 'your area')}. "
-                        "Our catalog is being updated regularly. Would you like to browse other products? Type 'catalog' to see all available items.",
+                        "\n".join(suggestion_lines),
                         "idle",
                         state_before,
                         "catalog_no_results",

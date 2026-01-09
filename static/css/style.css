@@ -78,6 +78,26 @@ body {
   padding: 1.75rem 1.25rem;
   transition: width var(--transition-base), transform var(--transition-base);
   z-index: 100;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+@media (max-width: 768px) {
+  .sidebar {
+    transform: translateX(-100%);
+    z-index: 200;
+  }
+  .sidebar.open {
+    transform: translateX(0);
+  }
+  .main-content {
+    margin-left: 0;
+    width: 100%;
+    padding: 1.5rem;
+  }
+  .main-content.expanded {
+    margin-left: 0;
+  }
 }
 
 .sidebar.collapsed {
@@ -91,6 +111,8 @@ body {
   min-height: 100vh;
   transition: margin-left var(--transition-base);
   width: calc(100% - var(--sidebar-width));
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 
 .sidebar.collapsed + .main-content {

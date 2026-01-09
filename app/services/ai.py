@@ -5,27 +5,47 @@ from typing import Dict, Any, Optional
 
 
 class AIService:
-    def __init__(self, api_key: str):
+    def __init__(self, api_key: str, db=None):
         self.client = AsyncOpenAI(api_key=api_key)
-
-        # Constrained system prompt to keep replies on-brand and menu-focused
-        self.system_prompt = (
+        self.db = db
+        # Default system prompt - can be overridden by database config
+        self._default_system_prompt = (
             "You are PNP Lite's WhatsApp assistant. Be concise, friendly, and natural—no numbered menus unless absolutely needed. "
             "Collect missing details (name, city: PH/Lagos Mainland/Lagos Island/Abuja, membership: lifetime 50k / monthly 5k / one-time 2k). "
             "If someone says 'Lagos', you MUST ask if they are on the Mainland or Island. "
             "Acknowledge payment proofs, help with pricing/order/referral questions, and keep replies short. "
             "If unsure, ask a simple clarifying question instead of a menu."
         )
+    
+    async def get_system_prompt(self) -> str:
+        """Get system prompt from database config or return default."""
+        if self.db:
+            try:
+                config = await self.db.config.find_one({"_id": "bot_system_prompt"})
+                if config and config.get("value"):
+                    return config["value"]
+            except:
+                pass
+        return self._default_system_prompt
+    
+    @property
+    def system_prompt(self) -> str:
+        """Backward compatibility property - returns default for sync access."""
+        return self._default_system_prompt
 
     async def faq_reply(self, user_message: str, context: Optional[str] = None) -> Optional[str]:
         try:
+            system_prompt = await self.get_system_prompt()
+            messages = [
+                {"role": "system", "content": system_prompt},
+            ]
+            if context:
+                messages.append({"role": "system", "content": f"Context: {context}"})
+            messages.append({"role": "user", "content": user_message})
+            
             completion = await self.client.chat.completions.create(
                 model="gpt-4o-mini",
-                messages=[
-                    {"role": "system", "content": self.system_prompt},
-                    {"role": "system", "content": f"Context: {context}"} if context else None,
-                    {"role": "user", "content": user_message},
-                ],
+                messages=messages,
                 max_tokens=180,
                 temperature=0.4,
             )

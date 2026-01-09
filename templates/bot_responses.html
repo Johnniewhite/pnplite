@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="dashboard-header animate-slide-up">
+  <div>
+    <h1 class="gradient-text">Bot Responses</h1>
+    <p class="text-secondary text-sm">Edit the bot's system prompt and response behavior.</p>
+  </div>
+</div>
+
+{% if msg %}
+<div class="alert alert-success animate-slide-up" style="margin-bottom: 2rem;">
+  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+    stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+    <polyline points="22 4 12 14.01 9 11.01"></polyline>
+  </svg>
+  {{ msg }}
+</div>
+{% endif %}
+
+<div class="card animate-fade-in">
+  <form method="post" action="/ui/admin/bot-responses">
+    <div class="form-section">
+      <h4 class="text-xs text-muted uppercase tracking-widest mb-4">System Prompt</h4>
+      <div class="form-group">
+        <label class="form-label text-sm font-bold mb-2 block">
+          Bot Personality & Behavior Instructions
+        </label>
+        <textarea 
+          name="system_prompt" 
+          class="form-input" 
+          rows="12"
+          placeholder="Enter the system prompt that defines how the bot responds..."
+          style="font-family: monospace; font-size: 0.9rem; resize: vertical; min-height: 300px;">{{ system_prompt or '' }}</textarea>
+        <p class="text-xs text-muted mt-2">
+          This prompt instructs the AI on how to behave, what tone to use, and how to respond to users.
+          Changes take effect immediately for new conversations.
+        </p>
+      </div>
+    </div>
+
+    <div class="card-footer-premium" style="margin-top: 2rem; padding-top: 1.5rem; border-top: var(--glass-border);">
+      <button type="submit" class="btn btn-primary" style="width: 100%; padding: 1rem; font-size: 1rem;">
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none"
+          stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path>
+          <polyline points="17 21 17 13 7 13 7 21"></polyline>
+          <polyline points="7 3 7 8 15 8"></polyline>
+        </svg>
+        Save Changes
+      </button>
+    </div>
+  </form>
+</div>
+
+<div class="card animate-fade-in" style="margin-top: 2rem;">
+  <h3>Default System Prompt</h3>
+  <div class="info-card-premium" style="background: rgba(255,255,255,0.02); padding: 1rem; border-radius: 8px;">
+    <p class="text-sm text-muted" style="font-family: monospace; white-space: pre-wrap; line-height: 1.6;">
+You are PNP Lite's WhatsApp assistant. Be concise, friendly, and natural—no numbered menus unless absolutely needed. 
+Collect missing details (name, city: PH/Lagos Mainland/Lagos Island/Abuja, membership: lifetime 50k / monthly 5k / one-time 2k). 
+If someone says 'Lagos', you MUST ask if they are on the Mainland or Island. 
+Acknowledge payment proofs, help with pricing/order/referral questions, and keep replies short. 
+If unsure, ask a simple clarifying question instead of a menu.
+    </p>
+  </div>
+  <p class="text-xs text-muted mt-2">
+    This is the default prompt if no custom prompt is set. You can use this as a starting point.
+  </p>
+</div>
+{% endblock %}
+
