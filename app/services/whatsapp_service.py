@@ -1140,20 +1140,42 @@ class WhatsAppService:
             city_value = None
             # Try AI extraction first
             if self.ai_service:
-                extracted_city = await self.ai_service.extract_city(body_clean, allowed=["PH", "Port Harcourt", "Lagos", "Abuja"])
+                extracted_city = await self.ai_service.extract_city(body_clean, allowed=["PH", "Port Harcourt", "Lagos", "Lagos Mainland", "Lagos Island", "Abuja"])
                 if extracted_city:
                     city_value = extracted_city
                     ai_used = True
 
-            # If AI extraction fails, ask user to clarify
+            # Simple fallback: direct text matching for common city names (case-insensitive)
             if not city_value:
-                return (
-                    "I didn't catch that. Which city are you in? Please reply with: PH, Lagos, or Abuja",
-                    "awaiting_city",
-                    state_before,
-                    "city",
-                    ai_used,
-                )
+                lower_city = body_clean.lower().strip()
+                if "ph" in lower_city or "harcourt" in lower_city or "port harcourt" in lower_city:
+                    city_value = "PH"
+                elif "lagos" in lower_city:
+                    # If they just say "Lagos", we need to ask for Mainland/Island
+                    if "mainland" in lower_city:
+                        city_value = "Lagos Mainland"
+                    elif "island" in lower_city:
+                        city_value = "Lagos Island"
+                    else:
+                        # Ask for clarification
+                        return (
+                            "I see you're in Lagos! Are you on the Mainland or Island?",
+                            "awaiting_city",
+                            state_before,
+                            "city",
+                            ai_used,
+                        )
+                elif "abuja" in lower_city:
+                    city_value = "Abuja"
+                else:
+                    # If still no match, ask user to clarify
+                    return (
+                        "I didn't catch that. Which city are you in? Please reply with: PH, Lagos, or Abuja",
+                        "awaiting_city",
+                        state_before,
+                        "city",
+                        ai_used,
+                    )
 
             await self.upsert_member_state(phone, {"city": city_value, "state": "awaiting_membership"})
             friendly_name = member.get("name") or ""

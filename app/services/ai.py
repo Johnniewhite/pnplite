@@ -297,9 +297,13 @@ class AIService:
             prompt = (
                 "Extract the city from the user's message. "
                 f"Allowed options: {', '.join(allowed_list)}. "
-                "If the user says 'Lagos' without specifying, return an empty string so I can ask for clarification. "
-                "Return exactly one of those values (e.g., 'PH', 'Lagos Mainland', or 'Abuja'). "
-                "If unsure, return an empty string."
+                "CRITICAL RULES:\n"
+                "- If user says 'Abuja' (any case), return 'Abuja'\n"
+                "- If user says 'PH' or 'Port Harcourt' or 'Harcourt', return 'PH'\n"
+                "- If user says 'Lagos Mainland' or 'Mainland', return 'Lagos Mainland'\n"
+                "- If user says 'Lagos Island' or 'Island', return 'Lagos Island'\n"
+                "- If user says just 'Lagos' without Mainland/Island, return an empty string\n"
+                "Return exactly one of the allowed values. If unsure, return an empty string."
             )
             completion = await self.client.chat.completions.create(
                 model="gpt-4o-mini",
@@ -307,15 +311,30 @@ class AIService:
                     {"role": "system", "content": prompt},
                     {"role": "user", "content": user_message},
                 ],
-                max_tokens=10,
-                temperature=0.2,
+                max_tokens=15,
+                temperature=0.1,  # Lower temperature for more consistent results
             )
             city = completion.choices[0].message.content.strip()
             city = city.split("\n")[0].strip(",.! ")
-            if city:
+            
+            # Normalize and validate the result
+            city_lower = city.lower() if city else ""
+            if "abuja" in city_lower:
+                return "Abuja"
+            if "ph" in city_lower or "harcourt" in city_lower:
+                return "PH"
+            if "lagos" in city_lower:
+                if "mainland" in city_lower:
+                    return "Lagos Mainland"
+                elif "island" in city_lower:
+                    return "Lagos Island"
+                else:
+                    return None  # Need clarification for Lagos
+            if city and city in allowed_list:
                 return city
             return None
-        except Exception:
+        except Exception as e:
+            print(f"AI city extraction error: {e}")
             return None
 
     async def extract_membership(self, user_message: str) -> Optional[str]:
