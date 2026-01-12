@@ -1137,34 +1137,9 @@ class WhatsAppService:
             )
 
         if state == "awaiting_city":
-            # Primary method: Simple, reliable text matching (case-insensitive)
-            lower_city = body_clean.lower().strip()
             city_value = None
-            
-            # Check for PH / Port Harcourt
-            if lower_city == "ph" or "harcourt" in lower_city or lower_city == "port harcourt":
-                city_value = "PH"
-            # Check for Abuja
-            elif lower_city == "abuja":
-                city_value = "Abuja"
-            # Check for Lagos
-            elif "lagos" in lower_city:
-                if "mainland" in lower_city:
-                    city_value = "Lagos Mainland"
-                elif "island" in lower_city:
-                    city_value = "Lagos Island"
-                else:
-                    # Ask for clarification
-                    return (
-                        "I see you're in Lagos! Are you on the Mainland or Island?",
-                        "awaiting_city",
-                        state_before,
-                        "city",
-                        ai_used,
-                    )
-            
-            # If simple matching failed, try AI as backup
-            if not city_value and self.ai_service:
+            # Use AI for city extraction
+            if self.ai_service:
                 try:
                     extracted_city = await self.ai_service.extract_city(body_clean, allowed=["PH", "Port Harcourt", "Lagos Mainland", "Lagos Island", "Abuja"])
                     if extracted_city:
@@ -1173,7 +1148,7 @@ class WhatsAppService:
                 except Exception as e:
                     print(f"AI city extraction error: {e}")
             
-            # Final check - if still no match, ask user to clarify
+            # If AI extraction fails, ask user to clarify
             if not city_value:
                 return (
                     "I didn't catch that. Which city are you in? Please reply with: PH, Lagos, or Abuja",
@@ -1209,13 +1184,16 @@ class WhatsAppService:
 
         if state == "awaiting_membership":
             membership = None
-            # Try AI first
+            # Use AI for membership extraction
             if self.ai_service:
-                extracted_membership = await self.ai_service.extract_membership(body_clean)
-                if extracted_membership:
-                    membership = extracted_membership
-                    ai_used = True
-
+                try:
+                    extracted_membership = await self.ai_service.extract_membership(body_clean)
+                    if extracted_membership:
+                        membership = extracted_membership
+                        ai_used = True
+                except Exception as e:
+                    print(f"AI membership extraction error: {e}")
+            
             # If AI extraction fails, ask user to clarify
             if not membership:
                 return (

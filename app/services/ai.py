@@ -295,15 +295,22 @@ class AIService:
         try:
             allowed_list = allowed or ["PH", "Port Harcourt", "Lagos Mainland", "Lagos Island", "Abuja"]
             prompt = (
-                "Extract the city from the user's message. "
-                f"Allowed options: {', '.join(allowed_list)}. "
-                "CRITICAL RULES:\n"
-                "- If user says 'Abuja' (any case), return 'Abuja'\n"
-                "- If user says 'PH' or 'Port Harcourt' or 'Harcourt', return 'PH'\n"
-                "- If user says 'Lagos Mainland' or 'Mainland', return 'Lagos Mainland'\n"
-                "- If user says 'Lagos Island' or 'Island', return 'Lagos Island'\n"
-                "- If user says just 'Lagos' without Mainland/Island, return an empty string\n"
-                "Return exactly one of the allowed values. If unsure, return an empty string."
+                "You are extracting the city name from a user's message. "
+                f"Allowed values: {', '.join(allowed_list)}.\n\n"
+                "Rules:\n"
+                "- If the user says 'Abuja' (case insensitive), return exactly 'Abuja'\n"
+                "- If the user says 'PH', 'Port Harcourt', or 'Harcourt', return exactly 'PH'\n"
+                "- If the user says 'Lagos Mainland' or 'Mainland', return exactly 'Lagos Mainland'\n"
+                "- If the user says 'Lagos Island' or 'Island', return exactly 'Lagos Island'\n"
+                "- If the user says just 'Lagos' without Mainland/Island, return an empty string (need clarification)\n"
+                "- Return EXACTLY one of the allowed values, or an empty string if unclear\n"
+                "- Do not add any extra text, just return the exact value\n\n"
+                "Examples:\n"
+                "- User: 'Abuja' → Return: 'Abuja'\n"
+                "- User: 'PH' → Return: 'PH'\n"
+                "- User: 'Port Harcourt' → Return: 'PH'\n"
+                "- User: 'Lagos' → Return: '' (empty string)\n"
+                "- User: 'Lagos Mainland' → Return: 'Lagos Mainland'\n"
             )
             completion = await self.client.chat.completions.create(
                 model="gpt-4o-mini",
@@ -311,27 +318,16 @@ class AIService:
                     {"role": "system", "content": prompt},
                     {"role": "user", "content": user_message},
                 ],
-                max_tokens=15,
-                temperature=0.1,  # Lower temperature for more consistent results
+                max_tokens=20,
+                temperature=0.1,
             )
             city = completion.choices[0].message.content.strip()
-            city = city.split("\n")[0].strip(",.! ")
+            city = city.split("\n")[0].strip(",.! \"'")
             
-            # Normalize and validate the result
-            city_lower = city.lower() if city else ""
-            if "abuja" in city_lower:
-                return "Abuja"
-            if "ph" in city_lower or "harcourt" in city_lower:
-                return "PH"
-            if "lagos" in city_lower:
-                if "mainland" in city_lower:
-                    return "Lagos Mainland"
-                elif "island" in city_lower:
-                    return "Lagos Island"
-                else:
-                    return None  # Need clarification for Lagos
+            # Validate against allowed list - AI should return exact values
             if city and city in allowed_list:
                 return city
+            
             return None
         except Exception as e:
             print(f"AI city extraction error: {e}")
@@ -342,28 +338,42 @@ class AIService:
         Normalize membership to one of: lifetime, monthly, onetime.
         """
         try:
+            prompt = (
+                "You are extracting the membership plan from a user's message. "
+                "Allowed values: lifetime, monthly, onetime.\n\n"
+                "Rules:\n"
+                "- If user says 'Lifetime', 'Life', '50k', '50,000', '50000', '50', or mentions 50 thousand, return exactly 'lifetime'\n"
+                "- If user says 'Monthly', 'Month', '5k', '5,000', '5000', '5', or mentions 5 thousand, return exactly 'monthly'\n"
+                "- If user says 'One-time', 'Onetime', 'One time', '2k', '2,000', '2000', '2', or mentions 2 thousand, return exactly 'onetime'\n"
+                "- Return EXACTLY one of: lifetime, monthly, onetime\n"
+                "- Do not add any extra text, just return the exact keyword\n\n"
+                "Examples:\n"
+                "- User: 'Monthly' → Return: 'monthly'\n"
+                "- User: '5' → Return: 'monthly'\n"
+                "- User: '5k' → Return: 'monthly'\n"
+                "- User: 'Lifetime' → Return: 'lifetime'\n"
+                "- User: '50k' → Return: 'lifetime'\n"
+                "- User: 'One-time' → Return: 'onetime'\n"
+                "- User: '2k' → Return: 'onetime'\n"
+            )
             completion = await self.client.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=[
-                    {
-                        "role": "system",
-                        "content": "Map the user's reply to one of: lifetime, monthly, onetime. "
-                        "Consider hints like '50k' -> lifetime, '5k' -> monthly, '2k' or 'one time' -> onetime. "
-                        "Return only the keyword.",
-                    },
+                    {"role": "system", "content": prompt},
                     {"role": "user", "content": user_message},
                 ],
-                max_tokens=5,
-                temperature=0,
+                max_tokens=10,
+                temperature=0.1,
             )
-            choice = completion.choices[0].message.content.strip().lower()
-            if any(k in choice for k in ["life", "50"]):
-                return "lifetime"
-            if any(k in choice for k in ["month", "5k"]):
-                return "monthly"
-            if any(k in choice for k in ["one", "once", "2k"]):
-                return "onetime"
+            choice = completion.choices[0].message.content.strip()
+            choice = choice.split("\n")[0].strip(",.! \"'").lower()
+            
+            # Validate and return exact match - AI should return exact values
+            if choice in ["lifetime", "monthly", "onetime"]:
+                return choice
+            
             return None
-        except Exception:
+        except Exception as e:
+            print(f"AI membership extraction error: {e}")
             return None
 
