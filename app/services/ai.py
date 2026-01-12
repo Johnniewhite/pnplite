@@ -248,30 +248,43 @@ class AIService:
 
     async def extract_product_query(self, user_message: str) -> Optional[str]:
         """
-        Extract a short product query (e.g., 'rice', 'bag of rice') for search.
+        Extract a short product query (e.g., 'rice', 'bag of rice', 'Indomie') for search.
+        Handles questions like "Do you have Indomie?" -> "Indomie"
         """
         try:
+            prompt = (
+                "Extract the product name or product query from the user's message. "
+                "Return ONLY the product name/phrase, nothing else.\n\n"
+                "Examples:\n"
+                "- User: 'Do you have Indomie?' → Return: 'Indomie'\n"
+                "- User: 'Do you sell rice?' → Return: 'rice'\n"
+                "- User: 'I need oil' → Return: 'oil'\n"
+                "- User: 'Do you have big bull rice?' → Return: 'big bull rice'\n"
+                "- User: 'What products do you have?' → Return empty string\n"
+                "- User: 'Show me products' → Return empty string\n\n"
+                "If the message is a question about a specific product, extract just the product name. "
+                "If it's a general question about products/catalog, return an empty string. "
+                "Do not include question words, punctuation, or extra text - just the product name/phrase."
+            )
             completion = await self.client.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=[
-                    {
-                        "role": "system",
-                        "content": "Extract the product(s) the user wants in a few words. "
-                        "Return only the product phrase (e.g., 'bag of rice'). If unsure, return an empty string.",
-                    },
+                    {"role": "system", "content": prompt},
                     {"role": "user", "content": user_message},
                 ],
-                max_tokens=12,
-                temperature=0,
+                max_tokens=15,
+                temperature=0.1,
             )
             q = completion.choices[0].message.content.strip()
+            # Remove quotes if AI adds them
+            q = q.strip('"\'')
+            # Remove newlines
+            q = q.split("\n")[0].strip()
             # If the user asks broadly "what products do you have", returning "products" or "have" is bad.
             # Return empty string to trigger full catalog view.
             stop_words = ["products", "what", "items", "stock", "have", "sell", "do you have", "available", "list", "show", "menu", "option", "options"]
             if q.lower() in stop_words or any(x in q.lower() for x in ["what products", "list products"]):
                 return ""
-            return q or None
-            q = q.split("\n")[0].strip()
             return q or None
         except Exception:
             return None

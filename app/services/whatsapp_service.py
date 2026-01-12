@@ -1809,51 +1809,25 @@ class WhatsAppService:
 
         # 4. Product Search
         if intent_guess == "catalog_search" or product_query is not None:
-            # Use the entire message as the product query
+            # Extract product query using AI first (handles questions like "Do you have Indomie?")
+            original_query = body_clean
             if product_query is None:
-                product_query = body_clean
-
-            # Check if user is asking to read/view a product page - this is handled by AI intent classification
-            # If intent is catalog_search, we proceed with search; product page reading can be detected via AI
-                # Try to extract product name/SKU from message
-                product_ref = product_query.replace("product page", "").replace("read product", "").replace("view product", "").strip()
-                if product_ref:
-                    results = await self.search_products(product_ref, member.get("city"))
-                    if results:
-                        product = results[0]
-                        product_info = [
-                            f"*{product.get('name', 'Product')}*",
-                            f"SKU: {product.get('sku', 'N/A')}",
-                            f"Price: ₦{product.get('price', 'N/A')}",
-                            f"Stock: {'✅ In Stock' if product.get('in_stock', True) else '❌ Out of Stock'}"
-                        ]
-                        
-                        clusters = product.get("clusters", [])
-                        if clusters:
-                            product_info.append("\n*Available in:*")
-                            for c in clusters:
-                                city_area = f"{c.get('city', '')}"
-                                if c.get('area'):
-                                    city_area += f" - {c['area']}"
-                                product_info.append(f"• {city_area}")
-                        
-                        return ("\n".join(product_info), "idle", state_before, "product_page_read", True)
+                if self.ai_service:
+                    try:
+                        extracted_q = await self.ai_service.extract_product_query(body_clean)
+                        if extracted_q and extracted_q.strip():
+                            product_query = extracted_q.strip()
+                        else:
+                            product_query = body_clean  # Fallback to original if extraction fails
+                    except Exception as e:
+                        print(f"Error extracting product query: {e}")
+                        product_query = body_clean  # Fallback to original on error
+                else:
+                    product_query = body_clean
 
             # Perform search
             # Use unified search_products (even for empty query to get featured list matched to city)
-            original_query = product_query
-            
-            # Category requests are handled by AI intent classification - no keyword matching needed
-
             results = await self.search_products(product_query, member.get("city"))
-
-            # If no results, ask AI to refine extraction
-            if not results and self.ai_service and product_query:
-                extracted_q = await self.ai_service.extract_product_query(body_clean)
-                if extracted_q is not None and extracted_q != product_query:
-                    results = await self.search_products(extracted_q, member.get("city"))
-                    if results:
-                        product_query = extracted_q  # Update to show what we searched for
 
             # FINAL FALLBACK: If intent was catalog_search or we are broad, show featured (limited to city)
             if not results and (intent_guess == "catalog_search" or product_query == ""):
