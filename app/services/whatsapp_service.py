@@ -1387,14 +1387,10 @@ class WhatsAppService:
                 intent_guess = "catalog_search"
                 ai_used = True
         except asyncio.TimeoutError:
-            # On timeout, return error message - no keyword fallback
-            return (
-                "I'm processing your request. Please wait a moment and try again.",
-                "idle",
-                state_before,
-                "ai_timeout",
-                False
-            )
+            # On timeout, default to catalog_search to avoid blocking user
+            print(f"AI intent classification timeout for message: {body_clean[:50]}")
+            intent_guess = "catalog_search"
+            ai_used = False
         except Exception as e:
             print(f"AI intent error: {e}")
             # On error, return error message - no keyword fallback
@@ -1793,11 +1789,6 @@ class WhatsAppService:
                     results = await self.search_products(product_ref, member.get("city"))
                     if results:
                         product = results[0]
-                        base_url = self._public_base_url()
-                        # Use catalogue link with edit parameter as fallback or anchor if possible
-                        # Ideally, this should be a public product view. For now, we point to catalogue.
-                        catalogue_url = f"{base_url}/ui/admin/catalogue" if base_url else None
-                        
                         product_info = [
                             f"*{product.get('name', 'Product')}*",
                             f"SKU: {product.get('sku', 'N/A')}",
@@ -1813,9 +1804,6 @@ class WhatsAppService:
                                 if c.get('area'):
                                     city_area += f" - {c['area']}"
                                 product_info.append(f"• {city_area}")
-                        
-                        if catalogue_url:
-                            product_info.append(f"\n📱 View in Catalogue: {catalogue_url}")
                         
                         return ("\n".join(product_info), "idle", state_before, "product_page_read", True)
 
@@ -1855,10 +1843,6 @@ class WhatsAppService:
                     summary = self.render_cart_summary(cart)
                     return (f"✅ Added {product['name']} (x{qty}) to cart.\n{summary}", "idle", state_before, "cart_add_auto", True)
                 
-                # Generate catalogue URL
-                base_url = self._public_base_url()
-                catalogue_url = f"{base_url}/ui/admin/catalogue" if base_url else None
-                
                 lines = [f"*Available products:*"]
                 for p in results:
                     base_price = p.get("price", 0)
@@ -1895,9 +1879,6 @@ class WhatsAppService:
                             cluster_note = " [" + "; ".join(snippets) + "]"
                     lines.append(f"• {name}: {price_display}{cluster_note}")
                 
-                if catalogue_url:
-                    lines.append(f"\n📱 View full catalogue: {catalogue_url}")
-                
                 reply = "\n".join(lines)
                 await self.send_catalog_cards(phone, results, limit=5)
                 
@@ -1912,9 +1893,6 @@ class WhatsAppService:
                 categories = await self.get_product_categories()
                 available_categories = [cat for cat, prods in categories.items() if prods and cat != "other"]
                 
-                base_url = self._public_base_url()
-                catalogue_url = f"{base_url}/ui/admin/catalogue" if base_url else None
-                
                 if original_query:
                     suggestion_lines = [
                         f"Sorry, I couldn't find '{original_query}' in our current catalog."
@@ -1928,8 +1906,6 @@ class WhatsAppService:
                             suggestion_lines.append(f"• {cat_name} ({count} items)")
                     
                     suggestion_lines.append("\nTry searching for a category like: rice, oil, fish, chicken, etc.")
-                    if catalogue_url:
-                        suggestion_lines.append(f"\n📱 View full catalogue: {catalogue_url}")
                     
                     return (
                         "\n".join(suggestion_lines),
