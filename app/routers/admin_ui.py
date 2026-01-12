@@ -525,6 +525,7 @@ async def ui_catalogue_upsert(
     try:
         form = await request.form()
         sku = (form.get("sku") or "").strip()
+        original_sku = (form.get("original_sku") or "").strip()
         name = (form.get("name") or "").strip()
         price = (form.get("price") or "").strip()
         in_stock = form.get("in_stock")
@@ -538,13 +539,13 @@ async def ui_catalogue_upsert(
         image_url = None
         if image_file and image_file.filename:
             upload_dir = Path("uploads")
-        upload_dir.mkdir(exist_ok=True)
-        fname = f"prod_{uuid.uuid4().hex}_{image_file.filename}"
-        dest = upload_dir / fname
-        content = await image_file.read()
-        dest.write_bytes(content)
-        base = build_public_base(request, settings)
-        image_url = f"{base}/uploads/{fname}"
+            upload_dir.mkdir(exist_ok=True)
+            fname = f"prod_{uuid.uuid4().hex}_{image_file.filename}"
+            dest = upload_dir / fname
+            content = await image_file.read()
+            dest.write_bytes(content)
+            base = build_public_base(request, settings)
+            image_url = f"{base}/uploads/{fname}"
 
         # Parse clusters
         clusters = []
@@ -583,6 +584,12 @@ async def ui_catalogue_upsert(
         }
         if image_url:
             product_data["image_url"] = image_url
+
+        # Handle SKU rename
+        if original_sku and original_sku != sku:
+            # Check if new SKU exists? For now, we assume we can overwrite or it's a new one.
+            # Delete old SKU entry
+            await db.products.delete_one({"sku": original_sku})
 
         # Upsert by SKU
         await db.products.update_one(

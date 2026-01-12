@@ -65,7 +65,7 @@ body {
 /* Sidebar - Premium Overhaul */
 .sidebar {
   width: var(--sidebar-width);
-  height: 100vh;
+  height: 100dvh;
   position: fixed;
   left: 0;
   top: 0;
@@ -76,6 +76,7 @@ body {
   display: flex;
   flex-direction: column;
   padding: 1.75rem 1.25rem;
+  padding-bottom: 5rem;
   transition: width var(--transition-base), transform var(--transition-base);
   z-index: 100;
   overflow-y: auto;
@@ -94,6 +95,7 @@ body {
     margin-left: 0;
     width: 100%;
     padding: 1.5rem;
+    padding-bottom: 5rem;
   }
   .main-content.expanded {
     margin-left: 0;

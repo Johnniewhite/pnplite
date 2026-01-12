@@ -75,8 +75,12 @@
       </div>
       {% endif %}
 
-      <div class="price-row-premium">
-        <div class="price-premium">₦{{ p.price }}</div>
+      <div class="price-row-premium" style="display: flex; flex-direction: column; align-items: flex-start;">
+        <div class="price-premium">₦{{ p.price }} <span style="font-size: 0.7em; opacity: 0.7;">/ slot</span></div>
+        {% if p.clusters and p.clusters[0].units_per_cluster %}
+          {% set total = (p.price | float * p.clusters[0].units_per_cluster) %}
+          <div style="font-size: 0.8rem; opacity: 0.8;">Total: ₦{{ "{:,.2f}".format(total) }}</div>
+        {% endif %}
       </div>
     </div>
 

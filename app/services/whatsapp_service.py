@@ -1145,18 +1145,15 @@ class WhatsAppService:
                     city_value = extracted_city
                     ai_used = True
 
-            # Fallback to keyword matching only if AI fails
+            # If AI extraction fails, ask user to clarify
             if not city_value:
-                lower_city = body_clean.lower()
-                if "ph" in lower_city or "harcourt" in lower_city:
-                    city_value = "PH"
-                elif "lagos" in lower_city:
-                    city_value = "Lagos"
-                elif "abuja" in lower_city:
-                    city_value = "Abuja"
-                else:
-                    # If still no match, just use what they typed
-                    city_value = body_clean
+                return (
+                    "I didn't catch that. Which city are you in? Please reply with: PH, Lagos, or Abuja",
+                    "awaiting_city",
+                    state_before,
+                    "city",
+                    ai_used,
+                )
 
             await self.upsert_member_state(phone, {"city": city_value, "state": "awaiting_membership"})
             friendly_name = member.get("name") or ""
@@ -1191,16 +1188,7 @@ class WhatsAppService:
                     membership = extracted_membership
                     ai_used = True
 
-            # Fallback to simple keyword matching only if AI fails
-            if not membership:
-                text = body_clean.lower()
-                if "life" in text or "50" in text:
-                    membership = "lifetime"
-                elif "month" in text or "5k" in text:
-                    membership = "monthly"
-                elif "one" in text or "once" in text or "2k" in text:
-                    membership = "onetime"
-
+            # If AI extraction fails, ask user to clarify
             if not membership:
                 return (
                     "I can set you up with Lifetime (₦50k), Monthly (₦5k), or One-time (₦2k). Which do you want?",
@@ -1283,41 +1271,39 @@ class WhatsAppService:
             member["state"] = "idle"
             # Fall through to AI-based intent classification below
 
-        # Cart action shortcut if waiting for confirmation
+        # Cart action shortcut if waiting for confirmation - AI-only
         if member.get("state") == "awaiting_cart_action":
             product = member.get("last_product")
             if not product:
                 await self.upsert_member_state(phone, {"state": "idle", "last_product": None})
                 return ("Let's start over. Tell me what you want and I'll add it to your cart.", "idle", state_before, intent, ai_used)
-            if "checkout" in lower:
-                cart = await self.get_cart(phone)
-                summary = self.render_cart_summary(cart)
-                # Actually, let's just let it fall through to intent classification if complex
-                # but for speed, let's keep simple keywords
-                pass # logic continues below
-            if "add" in lower or "yes" in lower:
-                await self.add_item_to_cart(phone, product, qty=1)
-                cart = await self.get_cart(phone)
-                summary = self.render_cart_summary(cart)
-                await self.upsert_member_state(phone, {"state": "idle", "last_product": product})
-                return (f"Added {product.get('name')} to your cart.\n{summary}", "idle", state_before, "cart_add", ai_used)
-            if "more" in lower or "continue" in lower:
-                await self.upsert_member_state(phone, {"state": "idle", "last_product": product})
-                return ("Tell me what else you'd like.", "idle", state_before, "cart_more", ai_used)
             
-            # Escape trap: Check if they are asking something else
+            # Use AI to classify the response in cart action state
             if self.ai_service:
                 intent_check = await self.ai_service.classify_intent(body_clean)
-                # If they want to view cart or just chat, break out of this state or handle it
-                if intent_check in {"cart_view", "order_help", "other", "catalog_search"}:
-                     # Revert state to idle so main logic picks it up below
-                     await self.upsert_member_state(phone, {"state": "idle", "last_product": product})
-                     # Fall through to main logic
-                     pass
+                if intent_check == "cart_checkout":
+                    # Fall through to checkout logic below
+                    await self.upsert_member_state(phone, {"state": "idle", "last_product": product})
+                    # Override to proceed with checkout
+                    body_clean = "CHECKOUT"
+                    lower = "checkout"
+                    state = "idle"
+                    member["state"] = "idle"
+                elif intent_check == "cart_add":
+                    await self.add_item_to_cart(phone, product, qty=1)
+                    cart = await self.get_cart(phone)
+                    summary = self.render_cart_summary(cart)
+                    await self.upsert_member_state(phone, {"state": "idle", "last_product": product})
+                    return (f"Added {product.get('name')} to your cart.\n{summary}", "idle", state_before, "cart_add", True)
+                elif intent_check in {"cart_view", "order_help", "other", "catalog_search"}:
+                    # Revert state to idle so main logic picks it up below
+                    await self.upsert_member_state(phone, {"state": "idle", "last_product": product})
+                    # Fall through to main logic
+                    pass
                 else:
-                    return ("Reply ADD to add to cart, CHECKOUT to review your cart, or MORE to continue browsing.", "awaiting_cart_action", state_before, "cart_prompt", ai_used)
+                    return ("Would you like to add this to your cart, checkout, or continue browsing? Please let me know what you'd like to do.", "awaiting_cart_action", state_before, "cart_prompt", True)
             else:
-                return ("Reply ADD to add to cart, CHECKOUT to review your cart, or MORE to continue browsing.", "awaiting_cart_action", state_before, "cart_prompt", ai_used)
+                return ("I need AI assistance to understand your response. Please try again in a moment.", "idle", state_before, "ai_unavailable", False)
 
         # ============================================
         # AI-FIRST INTENT CLASSIFICATION
@@ -1363,52 +1349,56 @@ class WhatsAppService:
             await self.upsert_member_state(phone, {"current_cluster_id": None})
             return ("You've left the cluster. You are now using your personal cart.", "idle", state_before, "cluster_leave", False)
 
-        # Use AI for intent classification - Optimized with timeout/caching
-        if self.ai_service:
-            # Build rich context for AI - simplified for speed
-            intent_context = {
-                "in_cluster": member.get("current_cluster_id") is not None,
-                "payment_status": member.get("payment_status"),
-            }
-            # Use async AI call with timeout protection
-            try:
-                import asyncio
-                ai_intent = await asyncio.wait_for(
-                    self.ai_service.classify_intent(body_clean, context=intent_context),
-                    timeout=3.0  # 3 second timeout for faster responses
-                )
-                if ai_intent:
-                    intent_guess = ai_intent
-                    ai_used = True
-                else:
-                    # Fallback to keyword matching on timeout/None
-                    if any(kw in lower for kw in ["cart", "basket", "items"]):
-                        intent_guess = "cart_view"
-                    elif any(kw in lower for kw in ["checkout", "pay", "order"]):
-                        intent_guess = "cart_checkout"
-                    elif any(kw in lower for kw in ["add", "put"]):
-                        intent_guess = "cart_add"
-                    else:
-                        intent_guess = "catalog_search"  # Default to search
-            except asyncio.TimeoutError:
-                # Timeout - use keyword fallback
-                if any(kw in lower for kw in ["cart", "basket"]):
-                    intent_guess = "cart_view"
-                elif "checkout" in lower or "pay" in lower:
-                    intent_guess = "cart_checkout"
-                else:
-                    intent_guess = "catalog_search"
-            except Exception as e:
-                print(f"AI intent error: {e}")
-                intent_guess = "catalog_search"  # Safe fallback
-        else:
-            # No AI service - use keyword matching
-            if any(kw in lower for kw in ["cart", "basket"]):
-                intent_guess = "cart_view"
-            elif "checkout" in lower:
-                intent_guess = "cart_checkout"
+        # Use AI for intent classification - AI-only, no keyword fallbacks
+        if not self.ai_service:
+            # AI service is required - return error message if unavailable
+            return (
+                "I'm having trouble understanding messages right now. Please try again in a moment.",
+                "idle",
+                state_before,
+                "ai_unavailable",
+                False
+            )
+        
+        # Build rich context for AI
+        intent_context = {
+            "in_cluster": member.get("current_cluster_id") is not None,
+            "payment_status": member.get("payment_status"),
+        }
+        
+        # Use AI for intent classification - no fallbacks
+        try:
+            import asyncio
+            ai_intent = await asyncio.wait_for(
+                self.ai_service.classify_intent(body_clean, context=intent_context),
+                timeout=5.0  # Increased timeout for reliability
+            )
+            if ai_intent:
+                intent_guess = ai_intent
+                ai_used = True
             else:
+                # If AI returns None, default to catalog_search
                 intent_guess = "catalog_search"
+                ai_used = True
+        except asyncio.TimeoutError:
+            # On timeout, return error message - no keyword fallback
+            return (
+                "I'm processing your request. Please wait a moment and try again.",
+                "idle",
+                state_before,
+                "ai_timeout",
+                False
+            )
+        except Exception as e:
+            print(f"AI intent error: {e}")
+            # On error, return error message - no keyword fallback
+            return (
+                "I'm having trouble understanding your message right now. Please try rephrasing or try again in a moment.",
+                "idle",
+                state_before,
+                "ai_error",
+                False
+            )
 
         # Set product query for catalog searches
         if intent_guess == "catalog_search":
@@ -1789,8 +1779,8 @@ class WhatsAppService:
             if product_query is None:
                 product_query = body_clean
 
-            # Check if user is asking to read/view a product page
-            if "product page" in lower or "read product" in lower or "view product" in lower:
+            # Check if user is asking to read/view a product page - this is handled by AI intent classification
+            # If intent is catalog_search, we proceed with search; product page reading can be detected via AI
                 # Try to extract product name/SKU from message
                 product_ref = product_query.replace("product page", "").replace("read product", "").replace("view product", "").strip()
                 if product_ref:
@@ -1798,7 +1788,9 @@ class WhatsAppService:
                     if results:
                         product = results[0]
                         base_url = self._public_base_url()
-                        product_url = f"{base_url}/ui/admin/catalogue?edit={product.get('sku')}" if base_url else None
+                        # Use catalogue link with edit parameter as fallback or anchor if possible
+                        # Ideally, this should be a public product view. For now, we point to catalogue.
+                        catalogue_url = f"{base_url}/ui/admin/catalogue" if base_url else None
                         
                         product_info = [
                             f"*{product.get('name', 'Product')}*",
@@ -1816,14 +1808,17 @@ class WhatsAppService:
                                     city_area += f" - {c['area']}"
                                 product_info.append(f"• {city_area}")
                         
-                        if product_url:
-                            product_info.append(f"\n📱 View/Edit: {product_url}")
+                        if catalogue_url:
+                            product_info.append(f"\n📱 View in Catalogue: {catalogue_url}")
                         
                         return ("\n".join(product_info), "idle", state_before, "product_page_read", True)
 
             # Perform search
             # Use unified search_products (even for empty query to get featured list matched to city)
             original_query = product_query
+            
+            # Category requests are handled by AI intent classification - no keyword matching needed
+
             results = await self.search_products(product_query, member.get("city"))
 
             # If no results, ask AI to refine extraction
