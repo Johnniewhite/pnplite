@@ -295,42 +295,56 @@ class AIService:
         try:
             allowed_list = allowed or ["PH", "Port Harcourt", "Lagos Mainland", "Lagos Island", "Abuja"]
             prompt = (
-                "You are extracting the city name from a user's message. "
-                f"Allowed values: {', '.join(allowed_list)}.\n\n"
-                "Rules:\n"
-                "- If the user says 'Abuja' (case insensitive), return exactly 'Abuja'\n"
-                "- If the user says 'PH', 'Port Harcourt', or 'Harcourt', return exactly 'PH'\n"
-                "- If the user says 'Lagos Mainland' or 'Mainland', return exactly 'Lagos Mainland'\n"
-                "- If the user says 'Lagos Island' or 'Island', return exactly 'Lagos Island'\n"
-                "- If the user says just 'Lagos' without Mainland/Island, return an empty string (need clarification)\n"
-                "- Return EXACTLY one of the allowed values, or an empty string if unclear\n"
-                "- Do not add any extra text, just return the exact value\n\n"
-                "Examples:\n"
-                "- User: 'Abuja' → Return: 'Abuja'\n"
-                "- User: 'PH' → Return: 'PH'\n"
-                "- User: 'Port Harcourt' → Return: 'PH'\n"
-                "- User: 'Lagos' → Return: '' (empty string)\n"
-                "- User: 'Lagos Mainland' → Return: 'Lagos Mainland'\n"
+                "You are a city name extractor. Extract the city from the user's message.\n\n"
+                f"ALLOWED VALUES (return exactly one): {', '.join(allowed_list)}\n\n"
+                "MAPPING RULES:\n"
+                "- Input: 'Abuja' → Output: 'Abuja'\n"
+                "- Input: 'PH' or 'Ph' or 'ph' → Output: 'PH'\n"
+                "- Input: 'Port Harcourt' or 'Harcourt' → Output: 'PH'\n"
+                "- Input: 'Lagos Mainland' or 'Mainland' → Output: 'Lagos Mainland'\n"
+                "- Input: 'Lagos Island' or 'Island' → Output: 'Lagos Island'\n"
+                "- Input: 'Lagos' (alone) → Output: '' (empty - needs clarification)\n\n"
+                "OUTPUT FORMAT: Return ONLY the exact value from the allowed list. Nothing else.\n"
+                "If unclear, return an empty string.\n\n"
+                "EXAMPLES:\n"
+                "Input: 'Abuja' → Output: 'Abuja'\n"
+                "Input: 'PH' → Output: 'PH'\n"
+                "Input: 'Port Harcourt' → Output: 'PH'\n"
+                "Input: 'Lagos' → Output: ''\n"
+                "Input: 'Lagos Mainland' → Output: 'Lagos Mainland'\n"
             )
             completion = await self.client.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=[
                     {"role": "system", "content": prompt},
-                    {"role": "user", "content": user_message},
+                    {"role": "user", "content": f"Extract city from: {user_message}"},
                 ],
-                max_tokens=20,
-                temperature=0.1,
+                max_tokens=15,
+                temperature=0,
             )
             city = completion.choices[0].message.content.strip()
-            city = city.split("\n")[0].strip(",.! \"'")
+            # Remove any quotes, newlines, or extra formatting
+            city = city.replace('"', '').replace("'", '').split("\n")[0].strip(",.! ")
             
-            # Validate against allowed list - AI should return exact values
+            print(f"DEBUG: AI city extraction - Input: '{user_message}' → Raw output: '{completion.choices[0].message.content}' → Cleaned: '{city}'")
+            
+            # Validate against allowed list (exact match)
             if city and city in allowed_list:
                 return city
             
+            # Try case-insensitive match
+            city_lower = city.lower() if city else ""
+            for allowed in allowed_list:
+                if city_lower == allowed.lower():
+                    print(f"DEBUG: Matched via case-insensitive: '{city}' → '{allowed}'")
+                    return allowed
+            
+            print(f"DEBUG: No match found for city: '{city}'")
             return None
         except Exception as e:
             print(f"AI city extraction error: {e}")
+            import traceback
+            traceback.print_exc()
             return None
 
     async def extract_membership(self, user_message: str) -> Optional[str]:
@@ -339,41 +353,58 @@ class AIService:
         """
         try:
             prompt = (
-                "You are extracting the membership plan from a user's message. "
-                "Allowed values: lifetime, monthly, onetime.\n\n"
-                "Rules:\n"
-                "- If user says 'Lifetime', 'Life', '50k', '50,000', '50000', '50', or mentions 50 thousand, return exactly 'lifetime'\n"
-                "- If user says 'Monthly', 'Month', '5k', '5,000', '5000', '5', or mentions 5 thousand, return exactly 'monthly'\n"
-                "- If user says 'One-time', 'Onetime', 'One time', '2k', '2,000', '2000', '2', or mentions 2 thousand, return exactly 'onetime'\n"
-                "- Return EXACTLY one of: lifetime, monthly, onetime\n"
-                "- Do not add any extra text, just return the exact keyword\n\n"
-                "Examples:\n"
-                "- User: 'Monthly' → Return: 'monthly'\n"
-                "- User: '5' → Return: 'monthly'\n"
-                "- User: '5k' → Return: 'monthly'\n"
-                "- User: 'Lifetime' → Return: 'lifetime'\n"
-                "- User: '50k' → Return: 'lifetime'\n"
-                "- User: 'One-time' → Return: 'onetime'\n"
-                "- User: '2k' → Return: 'onetime'\n"
+                "You are a membership plan extractor. Extract the membership plan from the user's message.\n\n"
+                "ALLOWED VALUES (return exactly one): lifetime, monthly, onetime\n\n"
+                "MAPPING RULES:\n"
+                "- Input: 'Lifetime', 'Life', '50k', '50,000', '50000', '50', '₦50' → Output: 'lifetime'\n"
+                "- Input: 'Monthly', 'Month', '5k', '5,000', '5000', '5', '₦5' → Output: 'monthly'\n"
+                "- Input: 'One-time', 'Onetime', 'One time', '2k', '2,000', '2000', '2', '₦2' → Output: 'onetime'\n\n"
+                "OUTPUT FORMAT: Return ONLY the exact keyword: lifetime, monthly, or onetime. Nothing else.\n"
+                "If unclear, return an empty string.\n\n"
+                "EXAMPLES:\n"
+                "Input: 'Monthly' → Output: 'monthly'\n"
+                "Input: '5' → Output: 'monthly'\n"
+                "Input: '5k' → Output: 'monthly'\n"
+                "Input: 'Lifetime' → Output: 'lifetime'\n"
+                "Input: '50k' → Output: 'lifetime'\n"
+                "Input: 'Onetime' → Output: 'onetime'\n"
+                "Input: '2k' → Output: 'onetime'\n"
             )
             completion = await self.client.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=[
                     {"role": "system", "content": prompt},
-                    {"role": "user", "content": user_message},
+                    {"role": "user", "content": f"Extract membership from: {user_message}"},
                 ],
                 max_tokens=10,
-                temperature=0.1,
+                temperature=0,
             )
             choice = completion.choices[0].message.content.strip()
-            choice = choice.split("\n")[0].strip(",.! \"'").lower()
+            # Remove any quotes, newlines, or extra formatting
+            choice = choice.replace('"', '').replace("'", '').split("\n")[0].strip(",.! ").lower()
             
-            # Validate and return exact match - AI should return exact values
+            print(f"DEBUG: AI membership extraction - Input: '{user_message}' → Raw output: '{completion.choices[0].message.content}' → Cleaned: '{choice}'")
+            
+            # Validate and return exact match
             if choice in ["lifetime", "monthly", "onetime"]:
                 return choice
             
+            # Try partial matching for common variations (as fallback after AI)
+            if "life" in choice or "50" in choice:
+                print(f"DEBUG: Matched via partial: '{choice}' → 'lifetime'")
+                return "lifetime"
+            if "month" in choice or choice == "5":
+                print(f"DEBUG: Matched via partial: '{choice}' → 'monthly'")
+                return "monthly"
+            if "one" in choice or "once" in choice or choice == "2":
+                print(f"DEBUG: Matched via partial: '{choice}' → 'onetime'")
+                return "onetime"
+            
+            print(f"DEBUG: No match found for membership: '{choice}'")
             return None
         except Exception as e:
             print(f"AI membership extraction error: {e}")
+            import traceback
+            traceback.print_exc()
             return None
 
