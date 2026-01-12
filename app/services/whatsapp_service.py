@@ -1818,10 +1818,12 @@ class WhatsAppService:
                         if extracted_q and extracted_q.strip():
                             product_query = extracted_q.strip()
                         else:
-                            product_query = body_clean  # Fallback to original if extraction fails
+                            # Empty string means general query - show all products
+                            product_query = ""
                     except Exception as e:
                         print(f"Error extracting product query: {e}")
-                        product_query = body_clean  # Fallback to original on error
+                        # On error, try the original message
+                        product_query = body_clean
                 else:
                     product_query = body_clean
 
@@ -1829,8 +1831,8 @@ class WhatsAppService:
             # Use unified search_products (even for empty query to get featured list matched to city)
             results = await self.search_products(product_query, member.get("city"))
 
-            # FINAL FALLBACK: If intent was catalog_search or we are broad, show featured (limited to city)
-            if not results and (intent_guess == "catalog_search" or product_query == ""):
+            # FINAL FALLBACK: If no results and we have a specific query, try empty query to show all products
+            if not results and product_query and product_query.strip():
                 results = await self.search_products("", member.get("city"))
 
             if results:
@@ -1907,9 +1909,9 @@ class WhatsAppService:
                 
                 available_categories = [cat for cat, prods in filtered_categories.items() if prods and cat != "other"]
                 
-                if original_query:
+                if original_query and product_query:
                     suggestion_lines = [
-                        f"Sorry, I couldn't find '{original_query}' in our current catalog."
+                        f"Sorry, I couldn't find '{product_query}' in our current catalog."
                     ]
                     
                     if available_categories:
