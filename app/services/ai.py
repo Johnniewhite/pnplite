@@ -66,7 +66,18 @@ class AIService:
         try:
             context_str = ""
             if context:
-                context_str = f"User context: in_cluster={context.get('in_cluster')}, has_personal_items={context.get('has_personal_items')}, payment_status={context.get('payment_status')}"
+                context_parts = []
+                if context.get('in_cluster'):
+                    context_parts.append(f"in_cluster={context.get('in_cluster')}")
+                if context.get('has_personal_items'):
+                    context_parts.append(f"has_personal_items={context.get('has_personal_items')}")
+                if context.get('payment_status'):
+                    context_parts.append(f"payment_status={context.get('payment_status')}")
+                if context.get('in_cart_action_state'):
+                    context_parts.append("IMPORTANT: User is in cart action state - they were just shown a product and asked if they want to add it. Responses like 'add', 'yes', 'ok' should be classified as 'cart_add'.")
+                if context.get('has_product_selected'):
+                    context_parts.append(f"User has selected product: {context.get('product_name', '')}")
+                context_str = f"User context: {', '.join(context_parts)}" if context_parts else ""
 
             messages = [
                 {

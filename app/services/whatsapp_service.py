@@ -1277,37 +1277,69 @@ class WhatsAppService:
             member["state"] = "idle"
             # Fall through to AI-based intent classification below
 
-        # Cart action shortcut if waiting for confirmation - AI-only
+        # Cart action shortcut if waiting for confirmation - AI-only with context
         if member.get("state") == "awaiting_cart_action":
             product = member.get("last_product")
             if not product:
                 await self.upsert_member_state(phone, {"state": "idle", "last_product": None})
                 return ("Let's start over. Tell me what you want and I'll add it to your cart.", "idle", state_before, intent, ai_used)
             
-            # Use AI to classify the response in cart action state
-            if self.ai_service:
-                intent_check = await self.ai_service.classify_intent(body_clean)
-                if intent_check == "cart_checkout":
-                    # Fall through to checkout logic below
-                    await self.upsert_member_state(phone, {"state": "idle", "last_product": product})
-                    # Override to proceed with checkout
-                    body_clean = "CHECKOUT"
-                    lower = "checkout"
-                    state = "idle"
-                    member["state"] = "idle"
-                elif intent_check == "cart_add":
-                    await self.add_item_to_cart(phone, product, qty=1)
-                    cart = await self.get_cart(phone)
-                    summary = self.render_cart_summary(cart)
-                    await self.upsert_member_state(phone, {"state": "idle", "last_product": product})
-                    return (f"Added {product.get('name')} to your cart.\n{summary}", "idle", state_before, "cart_add", True)
-                elif intent_check in {"cart_view", "order_help", "other", "catalog_search"}:
-                    # Revert state to idle so main logic picks it up below
-                    await self.upsert_member_state(phone, {"state": "idle", "last_product": product})
-                    # Fall through to main logic
-                    pass
-                else:
-                    return ("Would you like to add this to your cart, checkout, or continue browsing? Please let me know what you'd like to do.", "awaiting_cart_action", state_before, "cart_prompt", True)
+            # Normalize common affirmative responses
+            body_lower = body_clean.lower().strip()
+            if body_lower in ["add", "yes", "y", "ok", "okay", "sure", "proceed", "add to cart", "add it"]:
+                # Direct match for common "add" responses
+                await self.add_item_to_cart(phone, product, qty=1)
+                cart = await self.get_cart(phone)
+                summary = self.render_cart_summary(cart)
+                await self.upsert_member_state(phone, {"state": "idle", "last_product": None})
+                return (f"✅ Added {product.get('name')} to your cart.\n{summary}", "idle", state_before, "cart_add", True)
+            elif body_lower in ["checkout", "check out", "pay", "payment", "buy", "purchase"]:
+                # Direct match for checkout responses
+                await self.upsert_member_state(phone, {"state": "idle", "last_product": product})
+                # Override to proceed with checkout
+                body_clean = "CHECKOUT"
+                lower = "checkout"
+                state = "idle"
+                member["state"] = "idle"
+            elif self.ai_service:
+                # Use AI with context that we're in cart action state
+                try:
+                    cart_context = {
+                        "in_cart_action_state": True,
+                        "has_product_selected": True,
+                        "product_name": product.get("name", "")
+                    }
+                    intent_check = await self.ai_service.classify_intent(body_clean, context=cart_context)
+                    if intent_check == "cart_checkout":
+                        # Fall through to checkout logic below
+                        await self.upsert_member_state(phone, {"state": "idle", "last_product": product})
+                        # Override to proceed with checkout
+                        body_clean = "CHECKOUT"
+                        lower = "checkout"
+                        state = "idle"
+                        member["state"] = "idle"
+                    elif intent_check == "cart_add":
+                        await self.add_item_to_cart(phone, product, qty=1)
+                        cart = await self.get_cart(phone)
+                        summary = self.render_cart_summary(cart)
+                        await self.upsert_member_state(phone, {"state": "idle", "last_product": None})
+                        return (f"✅ Added {product.get('name')} to your cart.\n{summary}", "idle", state_before, "cart_add", True)
+                    elif intent_check in {"cart_view", "order_help", "other"}:
+                        # Revert state to idle so main logic picks it up below
+                        await self.upsert_member_state(phone, {"state": "idle", "last_product": product})
+                        # Fall through to main logic
+                        pass
+                    elif intent_check == "catalog_search":
+                        # User wants to browse/search instead - revert state
+                        await self.upsert_member_state(phone, {"state": "idle", "last_product": product})
+                        # Fall through to main logic
+                        pass
+                    else:
+                        return ("Would you like to add this to your cart, checkout, or continue browsing? Please let me know what you'd like to do.", "awaiting_cart_action", state_before, "cart_prompt", True)
+                except Exception as e:
+                    print(f"Error in cart action AI classification: {e}")
+                    # On error, default to asking for clarification
+                    return ("Would you like to add this to your cart, checkout, or continue browsing? Please let me know what you'd like to do.", "awaiting_cart_action", state_before, "cart_prompt", False)
             else:
                 return ("I need AI assistance to understand your response. Please try again in a moment.", "idle", state_before, "ai_unavailable", False)
 
