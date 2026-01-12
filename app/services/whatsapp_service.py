@@ -1921,9 +1921,17 @@ class WhatsAppService:
                     return (reply, "awaiting_cart_action", state_before, "catalogue_search", True)
                 return (reply, "idle", state_before, "catalogue_search", True)
             else:
-                # No products found - suggest categories
+                # No products found - suggest categories (filtered by city)
                 categories = await self.get_product_categories()
-                available_categories = [cat for cat, prods in categories.items() if prods and cat != "other"]
+                # Filter categories by city to match what search_products would return
+                member_city = member.get("city")
+                filtered_categories = {}
+                for cat, prods in categories.items():
+                    filtered_prods = [p for p in prods if self._product_visible_for_city(p, member_city)]
+                    if filtered_prods:
+                        filtered_categories[cat] = filtered_prods
+                
+                available_categories = [cat for cat, prods in filtered_categories.items() if prods and cat != "other"]
                 
                 if original_query:
                     suggestion_lines = [
@@ -1934,7 +1942,7 @@ class WhatsAppService:
                         suggestion_lines.append("\n*Available product categories:*")
                         for cat in available_categories[:6]:  # Show top 6
                             cat_name = cat.capitalize()
-                            count = len(categories[cat])
+                            count = len(filtered_categories[cat])
                             suggestion_lines.append(f"• {cat_name} ({count} items)")
                     
                     suggestion_lines.append("\nTry searching for a category like: rice, oil, fish, chicken, etc.")
