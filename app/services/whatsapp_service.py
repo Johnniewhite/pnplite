@@ -103,34 +103,48 @@ class WhatsAppService:
     def _city_key(self, value: Optional[str]) -> str:
         if not value:
             return ""
-        normalized = value.lower().replace(" ", "").replace("-", "")
-        # Handle common city variations
-        if normalized in ["ph", "portharcourt", "porth"]:
+        normalized = value.lower().replace(" ", "").replace("-", "").replace("_", "")
+        # Handle common city variations - be very flexible for PH
+        if normalized in ["ph", "portharcourt", "porth", "portharc", "port", "harcourt"]:
             return "ph"
-        if normalized in ["lagosmainland", "mainland"]:
+        if normalized in ["lagosmainland", "mainland", "lagosmain"]:
             return "lagosmainland"
-        if normalized in ["lagosisland", "island"]:
+        if normalized in ["lagosisland", "island", "lagosisl"]:
             return "lagosisland"
         if normalized.startswith("lagos"):
             return "lagos"
+        if normalized in ["abuja", "abj", "fct"]:
+            return "abuja"
         return normalized
 
     def _product_visible_for_city(self, product: Dict[str, Any], member_city: Optional[str]) -> bool:
         clusters = product.get("clusters") or []
-        if not clusters or not member_city:
+        # If product has no city clusters configured, show to everyone
+        if not clusters:
             return True
+        # If member has no city set, show product (they'll see it during onboarding)
+        if not member_city:
+            return True
+        
         city_key = self._city_key(member_city)
         for c in clusters:
             cluster_city_key = self._city_key(c.get("city"))
+            # Exact match
             if cluster_city_key == city_key:
                 return True
-            # handle Lagos sub clusters matching Lagos
+            # Handle Lagos sub clusters matching Lagos (Mainland/Island both match "lagos")
             if city_key == "lagos" and cluster_city_key.startswith("lagos"):
                 return True
-            # handle PH variations
-            if city_key == "ph" and cluster_city_key == "ph":
+            if cluster_city_key == "lagos" and city_key.startswith("lagos"):
                 return True
-        return False
+            # Handle PH variations - be more flexible
+            if city_key == "ph" and (cluster_city_key == "ph" or "ph" in cluster_city_key):
+                return True
+            if cluster_city_key == "ph" and (city_key == "ph" or "ph" in city_key):
+                return True
+        # If no match found but product has clusters, still show it (lenient approach)
+        # This ensures users can see products even if city configuration is incomplete
+        return True
 
     def _is_valid_payment_ref(self, text: str) -> bool:
         """
@@ -1171,10 +1185,29 @@ class WhatsAppService:
                     if extracted_city:
                         city_value = extracted_city
                         ai_used = True
+                    # Special handling: if user says "Lagos" and AI returns empty, default to Lagos Mainland
+                    elif body_clean.lower().strip() in ["lagos", "lag"]:
+                        city_value = "Lagos Mainland"
+                        ai_used = True
                 except Exception as e:
                     print(f"AI city extraction error: {e}")
             
-            # If AI extraction fails, ask user to clarify
+            # If AI extraction fails, try simple fallback matching
+            if not city_value:
+                body_lower = body_clean.lower().strip()
+                # Simple fallback matching for common inputs
+                if body_lower in ["ph", "port harcourt", "portharcourt", "harcourt"]:
+                    city_value = "PH"
+                elif body_lower in ["lagos", "lag"]:
+                    city_value = "Lagos Mainland"  # Default to Mainland
+                elif body_lower in ["abuja", "abj"]:
+                    city_value = "Abuja"
+                elif "mainland" in body_lower and "lagos" in body_lower:
+                    city_value = "Lagos Mainland"
+                elif "island" in body_lower and "lagos" in body_lower:
+                    city_value = "Lagos Island"
+            
+            # If still no city value, ask user to clarify
             if not city_value:
                 return (
                     "I didn't catch that. Which city are you in? Please reply with: PH, Lagos, or Abuja",
