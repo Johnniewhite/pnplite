@@ -1339,42 +1339,97 @@ class WhatsAppService:
         # Cart action shortcut if waiting for confirmation - AI-only with context
         if member.get("state") == "awaiting_cart_action":
             product = member.get("last_product")
+            recent_products = member.get("recent_products", [])
+            
             if not product:
-                await self.upsert_member_state(phone, {"state": "idle", "last_product": None})
+                await self.upsert_member_state(phone, {"state": "idle", "last_product": None, "recent_products": []})
                 return ("Let's start over. Tell me what you want and I'll add it to your cart.", "idle", state_before, intent, ai_used)
             
             # Use AI for intent classification - no keyword matching
             if self.ai_service:
                 # Use AI with context that we're in cart action state
                 try:
+                    # Build context with product info
                     cart_context = {
                         "in_cart_action_state": True,
                         "has_product_selected": True,
-                        "product_name": product.get("name", "")
+                        "product_name": product.get("name", "") if isinstance(product, dict) else "",
+                        "has_multiple_products": len(recent_products) > 1
                     }
+                    if recent_products:
+                        cart_context["available_products"] = [p.get("name", "") for p in recent_products[:5]]
+                    
                     intent_check = await self.ai_service.classify_intent(body_clean, context=cart_context)
+                    
                     if intent_check == "cart_checkout":
                         # Fall through to checkout logic below
-                        await self.upsert_member_state(phone, {"state": "idle", "last_product": product})
+                        await self.upsert_member_state(phone, {"state": "idle", "last_product": None, "recent_products": []})
                         # Override to proceed with checkout
                         body_clean = "CHECKOUT"
                         lower = "checkout"
                         state = "idle"
                         member["state"] = "idle"
                     elif intent_check == "cart_add":
-                        await self.add_item_to_cart(phone, product, qty=1)
+                        # If multiple products, try to extract which one they want
+                        selected_product = product
+                        user_lower = body_clean.lower().strip()
+                        
+                        # If user just says "add" without specifying, use default (first) product
+                        if len(recent_products) > 1 and user_lower not in ["add", "yes", "y", "ok", "okay", "sure", "proceed"]:
+                            # User specified a product - try to match it
+                            if self.ai_service:
+                                try:
+                                    # Try to match user's message to one of the products
+                                    for p in recent_products:
+                                        p_name = p.get("name", "").lower()
+                                        p_sku = p.get("sku", "").lower()
+                                        # Check if user's message contains product name or SKU
+                                        if p_name in user_lower or user_lower in p_name or (p_sku and p_sku in user_lower):
+                                            # Found a match - need to get full product object
+                                            # Search for the product to get full details
+                                            search_results = await self.search_products(p.get("name", ""), member.get("city"))
+                                            if search_results:
+                                                selected_product = search_results[0]
+                                                break
+                                except Exception as e:
+                                    print(f"Error matching product from list: {e}")
+                                    # Fall back to default product
+                        
+                        # Ensure product is a dict with all required fields (sku, name, price)
+                        if not isinstance(selected_product, dict) or not selected_product.get("sku"):
+                            # If product is incomplete, search for it using name
+                            product_name = selected_product.get("name", "") if isinstance(selected_product, dict) else str(selected_product)
+                            if product_name:
+                                search_results = await self.search_products(product_name, member.get("city"))
+                                if search_results:
+                                    selected_product = search_results[0]
+                                else:
+                                    # Last resort: try to get from recent_products
+                                    if recent_products and len(recent_products) > 0:
+                                        first_product_info = recent_products[0]
+                                        search_results = await self.search_products(first_product_info.get("name", ""), member.get("city"))
+                                        if search_results:
+                                            selected_product = search_results[0]
+                        
+                        # Final check - if still no valid product, return error
+                        if not isinstance(selected_product, dict) or not selected_product.get("sku"):
+                            await self.upsert_member_state(phone, {"state": "idle", "last_product": None, "recent_products": []})
+                            return ("Sorry, I couldn't find that product. Please search again or specify which product you want.", "idle", state_before, "cart_add_fail", True)
+                        
+                        await self.add_item_to_cart(phone, selected_product, qty=1)
                         cart = await self.get_cart(phone)
                         summary = self.render_cart_summary(cart)
-                        await self.upsert_member_state(phone, {"state": "idle", "last_product": None})
-                        return (f"✅ Added {product.get('name')} to your cart.\n{summary}", "idle", state_before, "cart_add", True)
+                        await self.upsert_member_state(phone, {"state": "idle", "last_product": None, "recent_products": []})
+                        product_name = selected_product.get("name", "item")
+                        return (f"✅ Added {product_name} to your cart.\n{summary}", "idle", state_before, "cart_add", True)
                     elif intent_check in {"cart_view", "order_help", "other"}:
                         # Revert state to idle so main logic picks it up below
-                        await self.upsert_member_state(phone, {"state": "idle", "last_product": product})
+                        await self.upsert_member_state(phone, {"state": "idle", "last_product": None, "recent_products": []})
                         # Fall through to main logic
                         pass
                     elif intent_check == "catalog_search":
                         # User wants to browse/search instead - revert state
-                        await self.upsert_member_state(phone, {"state": "idle", "last_product": product})
+                        await self.upsert_member_state(phone, {"state": "idle", "last_product": None, "recent_products": []})
                         # Fall through to main logic
                         pass
                     else:
@@ -1955,7 +2010,16 @@ class WhatsAppService:
                     await self.upsert_member_state(phone, {"state": "awaiting_cart_action", "last_product": product})
                     reply += "\nAdd this to your cart? Reply ADD or CHECKOUT."
                     return (reply, "awaiting_cart_action", state_before, "catalogue_search", True)
-                return (reply, "idle", state_before, "catalogue_search", True)
+                else:
+                    # Multiple products: store them and set state to await cart action
+                    # Store first product as default, and list of all products for AI to choose from
+                    await self.upsert_member_state(phone, {
+                        "state": "awaiting_cart_action", 
+                        "last_product": results[0] if results else None,
+                        "recent_products": [{"name": p.get("name"), "sku": p.get("sku"), "price": p.get("price")} for p in results[:10]]  # Store up to 10
+                    })
+                    reply += "\nWhich one would you like to add? Reply ADD or specify the product name."
+                    return (reply, "awaiting_cart_action", state_before, "catalogue_search", True)
             else:
                 # No products found - suggest categories (filtered by city)
                 categories = await self.get_product_categories()
