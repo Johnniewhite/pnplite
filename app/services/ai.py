@@ -280,11 +280,8 @@ class AIService:
             q = q.strip('"\'')
             # Remove newlines
             q = q.split("\n")[0].strip()
-            # If the user asks broadly "what products do you have", returning "products" or "have" is bad.
-            # Return empty string to trigger full catalog view.
-            stop_words = ["products", "what", "items", "stock", "have", "sell", "do you have", "available", "list", "show", "menu", "option", "options"]
-            if q.lower() in stop_words or any(x in q.lower() for x in ["what products", "list products"]):
-                return ""
+            # Trust AI to return empty string for general queries based on prompt instructions
+            # No keyword filtering - AI handles this intelligently
             return q or None
         except Exception:
             return None

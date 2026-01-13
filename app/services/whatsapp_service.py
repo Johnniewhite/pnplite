@@ -101,7 +101,19 @@ class WhatsAppService:
         return url
 
     def _city_key(self, value: Optional[str]) -> str:
-        return (value or "").lower().replace(" ", "")
+        if not value:
+            return ""
+        normalized = value.lower().replace(" ", "").replace("-", "")
+        # Handle common city variations
+        if normalized in ["ph", "portharcourt", "porth"]:
+            return "ph"
+        if normalized in ["lagosmainland", "mainland"]:
+            return "lagosmainland"
+        if normalized in ["lagosisland", "island"]:
+            return "lagosisland"
+        if normalized.startswith("lagos"):
+            return "lagos"
+        return normalized
 
     def _product_visible_for_city(self, product: Dict[str, Any], member_city: Optional[str]) -> bool:
         clusters = product.get("clusters") or []
@@ -109,10 +121,14 @@ class WhatsAppService:
             return True
         city_key = self._city_key(member_city)
         for c in clusters:
-            if self._city_key(c.get("city")) == city_key:
+            cluster_city_key = self._city_key(c.get("city"))
+            if cluster_city_key == city_key:
                 return True
             # handle Lagos sub clusters matching Lagos
-            if city_key == "lagos" and self._city_key(c.get("city")).startswith("lagos"):
+            if city_key == "lagos" and cluster_city_key.startswith("lagos"):
+                return True
+            # handle PH variations
+            if city_key == "ph" and cluster_city_key == "ph":
                 return True
         return False
 
@@ -353,34 +369,47 @@ class WhatsAppService:
         return cfg.get("url") or self.settings.price_sheet_url
 
     async def search_products(self, query: str, member_city: Optional[str]) -> List[Dict[str, Any]]:
-        # Split into keywords for flexible matching (semo bag -> matches "Bag of Semo")
-        # Filter out common noise words that break AND matching
-        noise = {"bag", "of", "pack", "the", "a", "an", "some"}
-        keywords = [q.strip() for q in query.lower().split() if q.strip() and q.strip() not in noise]
+        # Use full query for search - let MongoDB regex handle matching intelligently
+        # No keyword filtering - trust AI to extract meaningful queries
+        query_clean = query.strip() if query else ""
         
-        if not keywords:
-            # Try a single keyword search if we filtered everything (e.g. user just said "bag")
-            keywords = [q.strip() for q in query.split() if q.strip()][:1]
-        
-        if not keywords:
-            # Broad search (featured)
+        if not query_clean:
+            # Broad search (featured) - show all available products
             criteria = {"$or": [{"in_stock": True}, {"in_stock": {"$exists": False}}]}
         else:
-            # All keywords must match (in any order) either the name or the SKU
-            keyword_filters = []
-            for kw in keywords:
-                regex = {"$regex": kw, "$options": "i"}
-                keyword_filters.append({"$or": [{"name": regex}, {"sku": regex}]})
-            
+            # Use full query as regex pattern for flexible matching
+            # This allows natural language queries to work better
+            regex = {"$regex": query_clean, "$options": "i"}
             criteria = {
                 "$and": [
                     {"$or": [{"in_stock": True}, {"in_stock": {"$exists": False}}]},
-                    *keyword_filters
+                    {"$or": [{"name": regex}, {"sku": regex}]}
                 ]
             }
 
         products = await self.db.products.find(criteria).sort("name", 1).to_list(length=50)
-        return [p for p in products if self._product_visible_for_city(p, member_city)]
+        
+        # Separate products by city visibility
+        city_visible = []
+        city_not_visible = []
+        
+        for p in products:
+            if self._product_visible_for_city(p, member_city):
+                city_visible.append(p)
+            else:
+                city_not_visible.append(p)
+        
+        # If we have city-visible products, return only those
+        if city_visible:
+            return city_visible
+        
+        # If no city-visible products but we have matching products, return them anyway
+        # This handles cases where products exist but city clusters aren't configured
+        if city_not_visible:
+            return city_not_visible
+        
+        # No products found at all
+        return []
     
     async def get_product_categories(self) -> Dict[str, List[Dict[str, Any]]]:
         """Get products grouped by category based on common keywords."""
@@ -697,20 +726,17 @@ class WhatsAppService:
         if not items:
             return
             
-        # Refined keyword matching
-        noise = {"bag", "of", "pack", "the", "a", "an", "some"}
-        query_keywords = [k.strip().lower() for k in item_query.split() if k.strip() and k.strip().lower() not in noise]
-        
-        if not query_keywords:
-            query_keywords = [item_query.lower()]
+        # Use full query for matching - no keyword filtering
+        # Let the full query match against item names for better accuracy
+        query_lower = item_query.lower().strip()
 
         new_items = []
         removed = False
         
         for it in items:
             name_lower = (it.get("name") or "").lower()
-            # If all keywords from query are in the item name
-            match = all(k in name_lower for k in query_keywords)
+            # Check if query is contained in item name (flexible matching)
+            match = query_lower in name_lower or name_lower in query_lower
             
             if match and not removed:
                 removed = True
@@ -1284,24 +1310,8 @@ class WhatsAppService:
                 await self.upsert_member_state(phone, {"state": "idle", "last_product": None})
                 return ("Let's start over. Tell me what you want and I'll add it to your cart.", "idle", state_before, intent, ai_used)
             
-            # Normalize common affirmative responses
-            body_lower = body_clean.lower().strip()
-            if body_lower in ["add", "yes", "y", "ok", "okay", "sure", "proceed", "add to cart", "add it"]:
-                # Direct match for common "add" responses
-                await self.add_item_to_cart(phone, product, qty=1)
-                cart = await self.get_cart(phone)
-                summary = self.render_cart_summary(cart)
-                await self.upsert_member_state(phone, {"state": "idle", "last_product": None})
-                return (f"✅ Added {product.get('name')} to your cart.\n{summary}", "idle", state_before, "cart_add", True)
-            elif body_lower in ["checkout", "check out", "pay", "payment", "buy", "purchase"]:
-                # Direct match for checkout responses
-                await self.upsert_member_state(phone, {"state": "idle", "last_product": product})
-                # Override to proceed with checkout
-                body_clean = "CHECKOUT"
-                lower = "checkout"
-                state = "idle"
-                member["state"] = "idle"
-            elif self.ai_service:
+            # Use AI for intent classification - no keyword matching
+            if self.ai_service:
                 # Use AI with context that we're in cart action state
                 try:
                     cart_context = {
@@ -1383,9 +1393,7 @@ class WhatsAppService:
                 False
             )
 
-        if lower in {"leave cluster", "exit cluster"}:
-            await self.upsert_member_state(phone, {"current_cluster_id": None})
-            return ("You've left the cluster. You are now using your personal cart.", "idle", state_before, "cluster_leave", False)
+        # Cluster leave is handled by AI intent classification - no keyword matching needed
 
         # Use AI for intent classification - AI-only, no keyword fallbacks
         if not self.ai_service:
@@ -1822,18 +1830,37 @@ class WhatsAppService:
                             product_query = ""
                     except Exception as e:
                         print(f"Error extracting product query: {e}")
-                        # On error, try the original message
+                        # On error, try the original message as fallback
                         product_query = body_clean
                 else:
                     product_query = body_clean
+
+            # If product_query is still None or empty after extraction, use original message
+            # AI extraction handles determining if it's a general vs specific query
+            if not product_query or not product_query.strip():
+                product_query = body_clean.strip()
 
             # Perform search
             # Use unified search_products (even for empty query to get featured list matched to city)
             results = await self.search_products(product_query, member.get("city"))
 
-            # FINAL FALLBACK: If no results and we have a specific query, try empty query to show all products
+            # FINAL FALLBACK: If no results and we have a specific query, try multiple fallback strategies
             if not results and product_query and product_query.strip():
+                # Try 1: Search with empty query to show all products
                 results = await self.search_products("", member.get("city"))
+                
+                # Try 2: If still no results, try searching without city filter (for debugging)
+                if not results and product_query and product_query.strip():
+                    # Last resort: search all products regardless of city using full query
+                    regex = {"$regex": product_query.strip(), "$options": "i"}
+                    criteria = {
+                        "$and": [
+                            {"$or": [{"in_stock": True}, {"in_stock": {"$exists": False}}]},
+                            {"$or": [{"name": regex}, {"sku": regex}]}
+                        ]
+                    }
+                    all_products = await self.db.products.find(criteria).sort("name", 1).to_list(length=50)
+                    results = all_products
 
             if results:
                 # Manual Cart Add from catalog search (single match auto-add)
@@ -1910,8 +1937,10 @@ class WhatsAppService:
                 available_categories = [cat for cat, prods in filtered_categories.items() if prods and cat != "other"]
                 
                 if original_query and product_query:
+                    # Use original query in error message for better user experience
+                    display_query = original_query if len(original_query) < 50 else product_query
                     suggestion_lines = [
-                        f"Sorry, I couldn't find '{product_query}' in our current catalog."
+                        f"Sorry, I couldn't find '{display_query}' in our current catalog."
                     ]
                     
                     if available_categories:
