@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Request, BackgroundTasks
 from fastapi.responses import PlainTextResponse, Response
 from twilio.twiml.messaging_response import MessagingResponse
 
@@ -24,6 +24,7 @@ def get_service(settings: Settings = Depends(get_settings)) -> WhatsAppService:
 @router.post("/webhook", response_class=PlainTextResponse)
 async def whatsapp_webhook(
     request: Request,
+    background_tasks: BackgroundTasks,
     settings: Settings = Depends(get_settings),
     service: WhatsAppService = Depends(get_service),
 ):
@@ -62,11 +63,10 @@ async def whatsapp_webhook(
 
     resp = MessagingResponse()
     
-    # Note: Content Templates with buttons must be sent via REST API, not TwiML
-    # For TwiML responses, we send text messages and users can type button text
-    # The button_actions are stored for potential future REST API integration
+    # Check if we should use a Content Template for buttons
+    content_sid = service._get_content_sid_for_buttons(button_actions) if button_actions else None
     
-    # Send the reply text
+    # Send the reply text via TwiML
     if reply_text and reply_text.strip():
         # status_callback is passed as a parameter to message(), not as a method
         if settings.twilio_status_callback_url:
@@ -79,9 +79,6 @@ async def whatsapp_webhook(
             resp.message("", status_callback=settings.twilio_status_callback_url)
         else:
             resp.message("")
-    
-    # TODO: For full button support, send Content Templates via REST API
-    # This would require using service.send_outbound_with_template() instead of TwiML
 
     await service.log_message(
         phone=from_phone,
@@ -92,6 +89,11 @@ async def whatsapp_webhook(
         intent=intent,
         ai_used=ai_used,
     )
+
+    # Send Content Template with buttons via REST API (after TwiML response)
+    # This runs in background so it doesn't block the webhook response
+    if content_sid:
+        background_tasks.add_task(service.send_content_template, from_phone, content_sid)
 
     # Twilio expects XML string
     return Response(str(resp), media_type="text/xml")

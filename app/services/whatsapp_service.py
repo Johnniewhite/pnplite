@@ -192,9 +192,9 @@ class WhatsAppService:
                 return True
             if cluster_city_key == "ph" and (city_key == "ph" or "ph" in city_key):
                 return True
-        # If no match found but product has clusters, still show it (lenient approach)
-        # This ensures users can see products even if city configuration is incomplete
-        return True
+        # If product has clusters configured but no match found, don't show it
+        # This respects the city configuration in the product
+        return False
 
     def _is_valid_payment_ref(self, text: str) -> bool:
         """
@@ -270,6 +270,34 @@ class WhatsAppService:
             state_before=None,
             state_after="idle",
             media_url=media_url,
+        )
+        return resp.sid
+
+    async def send_content_template(self, phone: str, content_sid: str, content_variables: Optional[Dict[str, str]] = None) -> str:
+        """
+        Send a WhatsApp Content Template with buttons via REST API.
+        """
+        to_phone = phone if phone.startswith("whatsapp:") else f"whatsapp:{phone}"
+        params = {
+            "from_": self.settings.twilio_from_number,
+            "to": to_phone,
+            "content_sid": content_sid,
+        }
+        if content_variables:
+            import json
+            params["content_variables"] = json.dumps(content_variables)
+        cb = self._status_callback()
+        if cb:
+            params["status_callback"] = cb
+        resp = self.twilio.messages.create(**params)
+        # Log outbound
+        await self.log_message(
+            phone=phone.replace("whatsapp:", ""),
+            direction=MessageDirection.outbound,
+            body=f"[Content Template: {content_sid}]",
+            intent="template_send",
+            state_before=None,
+            state_after="idle",
         )
         return resp.sid
 
@@ -453,27 +481,15 @@ class WhatsAppService:
 
         products = await self.db.products.find(criteria).sort("name", 1).to_list(length=50)
         
-        # Separate products by city visibility
-        city_visible = []
-        city_not_visible = []
-        
+        # Filter products by city visibility - only show products that match user's city
+        # If product has no city clusters configured, show to everyone
+        # If product has city clusters configured, only show if user's city matches
+        filtered_products = []
         for p in products:
             if self._product_visible_for_city(p, member_city):
-                city_visible.append(p)
-            else:
-                city_not_visible.append(p)
+                filtered_products.append(p)
         
-        # If we have city-visible products, return only those
-        if city_visible:
-            return city_visible
-        
-        # If no city-visible products but we have matching products, return them anyway
-        # This handles cases where products exist but city clusters aren't configured
-        if city_not_visible:
-            return city_not_visible
-        
-        # No products found at all
-        return []
+        return filtered_products
     
     async def get_product_categories(self) -> Dict[str, List[Dict[str, Any]]]:
         """Get products grouped by category based on common keywords."""
@@ -1423,30 +1439,104 @@ class WhatsAppService:
                         state = "idle"
                         member["state"] = "idle"
                     elif intent_check == "cart_add":
-                        # If multiple products, try to extract which one they want
+                        # If multiple products, use AI to identify which one they want
                         selected_product = product
                         user_lower = body_clean.lower().strip()
                         
-                        # If user just says "add" without specifying, use default (first) product
-                        if len(recent_products) > 1 and user_lower not in ["add", "yes", "y", "ok", "okay", "sure", "proceed"]:
-                            # User specified a product - try to match it
+                        # If multiple products, always try to identify which one using AI
+                        if len(recent_products) > 1:
+                            # Check if user just said "add" without any product identifier
+                            simple_add_commands = ["add", "yes", "y", "ok", "okay", "sure", "proceed", "add to cart"]
+                            if user_lower in simple_add_commands:
+                                # User didn't specify - ask them to clarify
+                                product_names = [p.get("name", "") for p in recent_products[:5]]
+                                product_list = "\n".join([f"• {name}" for name in product_names])
+                                button_actions = [
+                                    {"action": "quick_reply", "content": "Add First"},
+                                    {"action": "quick_reply", "content": "View Cart"},
+                                    {"action": "quick_reply", "content": "Search More"}
+                                ]
+                                return (
+                                    f"I see multiple products. Which one would you like to add?\n\n{product_list}\n\nPlease specify the product name (e.g., 'Mango Rice' or 'Big Bull').",
+                                    "awaiting_cart_action",
+                                    state_before,
+                                    "cart_add_clarify",
+                                    True,
+                                    button_actions
+                                )
+                            
+                            # User specified something - use AI to identify the product
                             if self.ai_service:
                                 try:
-                                    # Try to match user's message to one of the products
+                                    # Use AI to extract product name from user message
+                                    # Build context with available products
+                                    products_list = "\n".join([f"- {p.get('name', '')} (SKU: {p.get('sku', '')})" for p in recent_products])
+                                    ai_prompt = f"""The user wants to add a product to their cart. They said: "{body_clean}"
+
+Available products:
+{products_list}
+
+Extract which product they want. Look for:
+- Product names mentioned (e.g., "mango", "big bull", "rice", "oil")
+- SKU codes mentioned
+- Any keywords that match product names
+
+Return ONLY the product name or SKU from the list above, nothing else. If you cannot determine, return "UNKNOWN"."""
+                                    
+                                    completion = await self.ai_service.client.chat.completions.create(
+                                        model="gpt-4o-mini",
+                                        messages=[
+                                            {"role": "system", "content": "Extract the exact product name or SKU the user wants to add from the provided list. Return only the product name/SKU or 'UNKNOWN' if unclear."},
+                                            {"role": "user", "content": ai_prompt}
+                                        ],
+                                        max_tokens=50,
+                                        temperature=0.1,
+                                    )
+                                    extracted = completion.choices[0].message.content.strip()
+                                    
+                                    # Match extracted product to recent products
+                                    if extracted.upper() != "UNKNOWN":
+                                        extracted_lower = extracted.lower()
+                                        for p in recent_products:
+                                            p_name = p.get("name", "").lower()
+                                            p_sku = p.get("sku", "").lower()
+                                            # Check if extracted text matches this product
+                                            if (extracted_lower in p_name or p_name in extracted_lower or 
+                                                (p_sku and (extracted_lower in p_sku or p_sku in extracted_lower)) or
+                                                any(word in p_name for word in extracted_lower.split() if len(word) > 2)):
+                                                # Found a match - get full product object
+                                                search_results = await self.search_products(p.get("name", ""), member.get("city"))
+                                                if search_results:
+                                                    selected_product = search_results[0]
+                                                    break
+                                    
+                                    # If no match found, try direct text matching as fallback
+                                    if selected_product == product:  # Still using default
+                                        for p in recent_products:
+                                            p_name = p.get("name", "").lower()
+                                            p_sku = p.get("sku", "").lower()
+                                            # Check for keyword matches (e.g., "mango" matches "MANGO RICE")
+                                            user_words = set(user_lower.split())
+                                            product_words = set(p_name.split())
+                                            if (user_lower in p_name or p_name in user_lower or 
+                                                (p_sku and p_sku in user_lower) or
+                                                len(user_words & product_words) > 0):
+                                                search_results = await self.search_products(p.get("name", ""), member.get("city"))
+                                                if search_results:
+                                                    selected_product = search_results[0]
+                                                    break
+                                except Exception as e:
+                                    print(f"Error using AI to identify product: {e}")
+                                    # Fall back to simple text matching
                                     for p in recent_products:
                                         p_name = p.get("name", "").lower()
                                         p_sku = p.get("sku", "").lower()
-                                        # Check if user's message contains product name or SKU
-                                        if p_name in user_lower or user_lower in p_name or (p_sku and p_sku in user_lower):
-                                            # Found a match - need to get full product object
-                                            # Search for the product to get full details
+                                        if (user_lower in p_name or p_name in user_lower or 
+                                            (p_sku and p_sku in user_lower)):
                                             search_results = await self.search_products(p.get("name", ""), member.get("city"))
                                             if search_results:
                                                 selected_product = search_results[0]
                                                 break
-                                except Exception as e:
-                                    print(f"Error matching product from list: {e}")
-                                    # Fall back to default product
                         
                         # Ensure product is a dict with all required fields (sku, name, price)
                         if not isinstance(selected_product, dict) or not selected_product.get("sku"):
@@ -2016,18 +2106,9 @@ class WhatsAppService:
                 # Try 1: Search with empty query to show all products
                 results = await self.search_products("", member.get("city"))
                 
-                # Try 2: If still no results, try searching without city filter (for debugging)
-                if not results and product_query and product_query.strip():
-                    # Last resort: search all products regardless of city using full query
-                    regex = {"$regex": product_query.strip(), "$options": "i"}
-                    criteria = {
-                        "$and": [
-                            {"$or": [{"in_stock": True}, {"in_stock": {"$exists": False}}]},
-                            {"$or": [{"name": regex}, {"sku": regex}]}
-                        ]
-                    }
-                    all_products = await self.db.products.find(criteria).sort("name", 1).to_list(length=50)
-                    results = all_products
+                # Try 2: If still no results, don't bypass city filter
+                # City filtering is important - if no products match the city, return empty
+                # This ensures products are only shown to users in the correct cities
 
             if results:
                 # Manual Cart Add from catalog search (single match auto-add)
