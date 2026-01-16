@@ -1493,12 +1493,12 @@ class WhatsAppService:
                         pass
                     else:
                         # Add buttons for cart action
-                button_actions = [
-                    {"action": "quick_reply", "content": "Add to Cart"},
-                    {"action": "quick_reply", "content": "Checkout"},
-                    {"action": "quick_reply", "content": "View Details"}
-                ]
-                return ("Would you like to add this to your cart, checkout, or continue browsing? Please let me know what you'd like to do.", "awaiting_cart_action", state_before, "cart_prompt", True, button_actions)
+                        button_actions = [
+                            {"action": "quick_reply", "content": "Add to Cart"},
+                            {"action": "quick_reply", "content": "Checkout"},
+                            {"action": "quick_reply", "content": "View Details"}
+                        ]
+                        return ("Would you like to add this to your cart, checkout, or continue browsing? Please let me know what you'd like to do.", "awaiting_cart_action", state_before, "cart_prompt", True, button_actions)
                 except Exception as e:
                     print(f"Error in cart action AI classification: {e}")
                     # On error, default to asking for clarification
