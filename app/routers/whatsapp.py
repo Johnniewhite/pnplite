@@ -62,26 +62,26 @@ async def whatsapp_webhook(
 
     resp = MessagingResponse()
     
-    # Check if we should use a Content Template for buttons
-    content_sid = service._get_content_sid_for_buttons(button_actions) if button_actions else None
+    # Note: Content Templates with buttons must be sent via REST API, not TwiML
+    # For TwiML responses, we send text messages and users can type button text
+    # The button_actions are stored for potential future REST API integration
     
-    # Always send the dynamic message text first (contains product info, cart summary, etc.)
+    # Send the reply text
     if reply_text and reply_text.strip():
-        msg1 = resp.message(reply_text)
+        # status_callback is passed as a parameter to message(), not as a method
         if settings.twilio_status_callback_url:
-            msg1.status_callback(settings.twilio_status_callback_url)
+            resp.message(reply_text, status_callback=settings.twilio_status_callback_url)
+        else:
+            resp.message(reply_text)
+    else:
+        # Fallback: send empty message if no text (shouldn't happen)
+        if settings.twilio_status_callback_url:
+            resp.message("", status_callback=settings.twilio_status_callback_url)
+        else:
+            resp.message("")
     
-    # Then send Content Template with buttons if available
-    if content_sid:
-        msg2 = resp.message()
-        msg2.content_sid(content_sid)
-        if settings.twilio_status_callback_url:
-            msg2.status_callback(settings.twilio_status_callback_url)
-    elif not reply_text or not reply_text.strip():
-        # If no text and no template, send empty message (shouldn't happen)
-        msg = resp.message("")
-        if settings.twilio_status_callback_url:
-            msg.status_callback(settings.twilio_status_callback_url)
+    # TODO: For full button support, send Content Templates via REST API
+    # This would require using service.send_outbound_with_template() instead of TwiML
 
     await service.log_message(
         phone=from_phone,
