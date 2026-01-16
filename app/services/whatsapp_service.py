@@ -16,6 +16,14 @@ from urllib.parse import urlparse, urlunparse
 
 
 class WhatsAppService:
+    # Content Template SIDs for WhatsApp buttons
+    CONTENT_SIDS = {
+        "add_to_cart": "HX624af982b4c1b8e300aa567a2f1f16e6",
+        "cart_actions": "HX537784f666f3a09e41ffb7aead2fecf4",
+        "cart_confirmation": "HXf228f027c53705a3913318f7a95a25f7",
+        "product_selection": "HX29817098467929f6250a368a64f3276e",
+    }
+    
     def __init__(self, db: AsyncIOMotorDatabase, settings: Settings, ai_service: Optional[AIService] = None):
         self.db = db
         self.settings = settings
@@ -99,6 +107,48 @@ class WhatsAppService:
             parsed = parsed._replace(scheme=new_base.scheme, netloc=new_base.netloc)
             return urlunparse(parsed)
         return url
+
+    def _get_content_sid_for_buttons(self, button_actions: List[Dict[str, str]]) -> Optional[str]:
+        """
+        Determine which Content Template to use based on button actions.
+        Returns the Content SID if a matching template is found.
+        """
+        if not button_actions:
+            return None
+        
+        # Extract button texts to identify the template
+        button_texts = [action.get("content", "").lower() for action in button_actions]
+        button_texts_str = " ".join(button_texts)
+        button_set = set(button_texts)
+        
+        # Match to template based on button combinations (exact matches first)
+        # Template: add_to_cart - "Add to Cart", "Checkout", "View Details"
+        if {"add to cart", "checkout", "view details"}.issubset(button_set):
+            return self.CONTENT_SIDS["add_to_cart"]
+        
+        # Template: cart_actions - "Checkout", "Add More", "Remove Item"
+        if {"checkout", "add more", "remove item"}.issubset(button_set):
+            return self.CONTENT_SIDS["cart_actions"]
+        
+        # Template: cart_confirmation - "View Cart", "Checkout", "Continue Shopping"
+        if {"view cart", "checkout", "continue shopping"}.issubset(button_set):
+            return self.CONTENT_SIDS["cart_confirmation"]
+        
+        # Template: product_selection - "Add First", "View Cart", "Search More"
+        if {"add first", "view cart", "search more"}.issubset(button_set):
+            return self.CONTENT_SIDS["product_selection"]
+        
+        # Fallback: match by key buttons
+        if "add to cart" in button_texts_str and "view details" in button_texts_str:
+            return self.CONTENT_SIDS["add_to_cart"]
+        elif "add more" in button_texts_str and "remove item" in button_texts_str:
+            return self.CONTENT_SIDS["cart_actions"]
+        elif "continue shopping" in button_texts_str:
+            return self.CONTENT_SIDS["cart_confirmation"]
+        elif "add first" in button_texts_str and "search more" in button_texts_str:
+            return self.CONTENT_SIDS["product_selection"]
+        
+        return None
 
     def _city_key(self, value: Optional[str]) -> str:
         if not value:
@@ -1035,18 +1085,20 @@ class WhatsAppService:
 
     async def handle_inbound(
         self, phone: str, body: str, media_url: Optional[str] = None
-    ) -> Tuple[str, str, str | None, str | None, bool]:
+    ) -> Tuple[str, str, str | None, str | None, bool, List[Dict[str, str]]]:
         """
-        Returns: (reply_text, next_state, state_before, intent, ai_used)
+        Returns: (reply_text, next_state, state_before, intent, ai_used, button_actions)
+        button_actions: List of dicts with 'action' and 'content' keys for WhatsApp buttons
         """
         body_clean = body.strip()
         intent = None
         ai_used = False
+        button_actions: List[Dict[str, str]] = []  # Default: no buttons
 
         # Admin commands
         if self.is_admin(phone) and body_clean.startswith("/"):
             reply, next_state = await self.handle_admin_command(phone, body_clean)
-            return (reply, next_state, None, "admin_command", ai_used)
+            return (reply, next_state, None, "admin_command", ai_used, button_actions)
 
         member = await self.get_member(phone)
         state_before = member.get("state")
@@ -1086,6 +1138,7 @@ class WhatsAppService:
                 state_before,
                 "onboard",
                 ai_used,
+                button_actions,
             )
 
         state = member.get("state")
@@ -1343,7 +1396,7 @@ class WhatsAppService:
             
             if not product:
                 await self.upsert_member_state(phone, {"state": "idle", "last_product": None, "recent_products": []})
-                return ("Let's start over. Tell me what you want and I'll add it to your cart.", "idle", state_before, intent, ai_used)
+                return ("Let's start over. Tell me what you want and I'll add it to your cart.", "idle", state_before, intent, ai_used, button_actions)
             
             # Use AI for intent classification - no keyword matching
             if self.ai_service:
@@ -1414,14 +1467,20 @@ class WhatsAppService:
                         # Final check - if still no valid product, return error
                         if not isinstance(selected_product, dict) or not selected_product.get("sku"):
                             await self.upsert_member_state(phone, {"state": "idle", "last_product": None, "recent_products": []})
-                            return ("Sorry, I couldn't find that product. Please search again or specify which product you want.", "idle", state_before, "cart_add_fail", True)
+                            return ("Sorry, I couldn't find that product. Please search again or specify which product you want.", "idle", state_before, "cart_add_fail", True, button_actions)
                         
                         await self.add_item_to_cart(phone, selected_product, qty=1)
                         cart = await self.get_cart(phone)
                         summary = self.render_cart_summary(cart)
                         await self.upsert_member_state(phone, {"state": "idle", "last_product": None, "recent_products": []})
                         product_name = selected_product.get("name", "item")
-                        return (f"✅ Added {product_name} to your cart.\n{summary}", "idle", state_before, "cart_add", True)
+                        # Add cart action buttons
+                        button_actions = [
+                            {"action": "quick_reply", "content": "View Cart"},
+                            {"action": "quick_reply", "content": "Checkout"},
+                            {"action": "quick_reply", "content": "Continue Shopping"}
+                        ]
+                        return (f"✅ Added {product_name} to your cart.\n{summary}", "idle", state_before, "cart_add", True, button_actions)
                     elif intent_check in {"cart_view", "order_help", "other"}:
                         # Revert state to idle so main logic picks it up below
                         await self.upsert_member_state(phone, {"state": "idle", "last_product": None, "recent_products": []})
@@ -1433,13 +1492,25 @@ class WhatsAppService:
                         # Fall through to main logic
                         pass
                     else:
-                        return ("Would you like to add this to your cart, checkout, or continue browsing? Please let me know what you'd like to do.", "awaiting_cart_action", state_before, "cart_prompt", True)
+                        # Add buttons for cart action
+                button_actions = [
+                    {"action": "quick_reply", "content": "Add to Cart"},
+                    {"action": "quick_reply", "content": "Checkout"},
+                    {"action": "quick_reply", "content": "View Details"}
+                ]
+                return ("Would you like to add this to your cart, checkout, or continue browsing? Please let me know what you'd like to do.", "awaiting_cart_action", state_before, "cart_prompt", True, button_actions)
                 except Exception as e:
                     print(f"Error in cart action AI classification: {e}")
                     # On error, default to asking for clarification
-                    return ("Would you like to add this to your cart, checkout, or continue browsing? Please let me know what you'd like to do.", "awaiting_cart_action", state_before, "cart_prompt", False)
+                    # Add buttons for cart action
+                    button_actions = [
+                        {"action": "quick_reply", "content": "Add to Cart"},
+                        {"action": "quick_reply", "content": "Checkout"},
+                        {"action": "quick_reply", "content": "View Details"}
+                    ]
+                    return ("Would you like to add this to your cart, checkout, or continue browsing? Please let me know what you'd like to do.", "awaiting_cart_action", state_before, "cart_prompt", False, button_actions)
             else:
-                return ("I need AI assistance to understand your response. Please try again in a moment.", "idle", state_before, "ai_unavailable", False)
+                return ("I need AI assistance to understand your response. Please try again in a moment.", "idle", state_before, "ai_unavailable", False, button_actions)
 
         # ============================================
         # AI-FIRST INTENT CLASSIFICATION
@@ -1453,7 +1524,7 @@ class WhatsAppService:
             cluster_id = body_clean.split("JOIN_CLUSTER_")[1].strip()
             cluster = await self.get_custom_cluster(cluster_id)
             if not cluster:
-                return ("Sorry, I couldn't find that cluster.", "idle", state_before, "cluster_join_fail", False)
+                return ("Sorry, I couldn't find that cluster.", "idle", state_before, "cluster_join_fail", False, button_actions)
 
             if member.get("payment_status") != "paid":
                 return (
@@ -1465,7 +1536,7 @@ class WhatsAppService:
                 )
 
             if len(cluster.get("members", [])) >= cluster.get("max_people", 5):
-                 return (f"Sorry, the cluster '{cluster['name']}' is already full.", "idle", state_before, "cluster_full", False)
+                 return (f"Sorry, the cluster '{cluster['name']}' is already full.", "idle", state_before, "cluster_full", False, button_actions)
 
             if phone not in cluster.get("members", []):
                 cluster["members"].append(phone)
@@ -1550,7 +1621,7 @@ class WhatsAppService:
                 "Say 'referral' to get your invite link\n\n"
                 "Type what you need and let's get started!"
             )
-            return (help_text, "idle", state_before, "menu_help", ai_used)
+            return (help_text, "idle", state_before, "menu_help", ai_used, button_actions)
 
         # PAYMENT CONFIRMATION Intent
         if intent_guess == "payment_confirmation":
@@ -1652,21 +1723,21 @@ class WhatsAppService:
                 lines.append(f"{indicator}*{c['name']}* ({role}) - {member_count}/{limit} members")
 
             lines.append("\nTo use a cluster's shared cart, just join it using the link provided when it was created.")
-            return ("\n".join(lines) + active_summary, "idle", state_before, "cluster_view", True)
+            return ("\n".join(lines) + active_summary, "idle", state_before, "cluster_view", True, button_actions)
 
         if intent_guess == "cluster_rename":
             details = await self.ai_service.extract_cluster_details(body_clean) if self.ai_service else None
             new_name = details.get("new_name") if details else None
 
             if not new_name:
-                return ("What would you like to rename the cluster to?", "idle", state_before, "cluster_rename_prompt", True)
+                return ("What would you like to rename the cluster to?", "idle", state_before, "cluster_rename_prompt", True, button_actions)
 
             # Check for clusters owned by this user
             clusters = await self.get_user_clusters(phone)
             owned = [c for c in clusters if c.get("owner_phone") == phone]
 
             if not owned:
-                return ("You don't own any clusters that can be renamed.", "idle", state_before, "cluster_rename_no_owned", True)
+                return ("You don't own any clusters that can be renamed.", "idle", state_before, "cluster_rename_no_owned", True, button_actions)
 
             # If they own multiple, we might need to ask which one, but for now let's assume the active one or the most recent one
             target_cluster = None
@@ -1683,15 +1754,15 @@ class WhatsAppService:
                 old_name = target_cluster.get("name")
                 target_cluster["name"] = new_name
                 await self.save_custom_cluster(target_cluster)
-                return (f"✅ Cluster '{old_name}' has been renamed to '{new_name}'!", "idle", state_before, "cluster_renamed", True)
+                return (f"✅ Cluster '{old_name}' has been renamed to '{new_name}'!", "idle", state_before, "cluster_renamed", True, button_actions)
 
-            return ("I couldn't find a cluster you own to rename.", "idle", state_before, "cluster_rename_fail", True)
+            return ("I couldn't find a cluster you own to rename.", "idle", state_before, "cluster_rename_fail", True, button_actions)
 
         if intent_guess == "referral_link":
             me = member.get("name", "Friend")
             bot_num = self.settings.twilio_from_number.replace("whatsapp:", "").replace("+", "")
             link = f"https://wa.me/{bot_num}?text=I%20was%20referred%20by%20{me}"
-            return (f"Share PNP Lite with your friends! Give them this link: {link}", "idle", state_before, "referral", True)
+            return (f"Share PNP Lite with your friends! Give them this link: {link}", "idle", state_before, "referral", True, button_actions)
         
         # HANDLE INTENTS
         
@@ -1720,11 +1791,18 @@ class WhatsAppService:
                     await self.upsert_member_state(phone, {"current_cluster_id": str(found_c["_id"])})
                     target = "cluster"
                  else:
-                    return (f"❓ I couldn't find a cluster named '{spec_cluster_name}' among your groups.", "idle", state_before, "cart_view_fail", True)
+                    return (f"❓ I couldn't find a cluster named '{spec_cluster_name}' among your groups.", "idle", state_before, "cart_view_fail", True, button_actions)
 
              force_p = (target == "personal")
              cart = await self.get_cart(phone, force_personal=force_p)
              summary = self.render_cart_summary(cart)
+             
+             # Add cart action buttons
+             cart_button_actions = [
+                 {"action": "quick_reply", "content": "Checkout"},
+                 {"action": "quick_reply", "content": "Add More"},
+                 {"action": "quick_reply", "content": "Remove Item"}
+             ]
              
              # If showing one, and they have items in the other, mention it
              other_target = "personal" if target == "cluster" else "cluster"
@@ -1741,7 +1819,7 @@ class WhatsAppService:
                      "",
                      "Reply 'cluster cart' or 'personal cart' to focus on one."
                  ]
-                 return ("\n".join(combined), "idle", state_before, "cart_view_dual", True)
+                 return ("\n".join(combined), "idle", state_before, "cart_view_dual", True, cart_button_actions)
              else:
                  if target == "cluster" and not cart.get("items"):
                      # If cluster cart empty but personal has items, prompt
@@ -1752,8 +1830,9 @@ class WhatsAppService:
                              state_before,
                              "cart_view_switch",
                              True,
+                             cart_button_actions,
                          )
-                 return (summary, "idle", state_before, "cart_view", True)
+                 return (summary, "idle", state_before, "cart_view", True, cart_button_actions)
 
         # 2. Checkout
         if intent_guess == "cart_checkout":
@@ -1764,22 +1843,22 @@ class WhatsAppService:
              if cluster_id:
                  cluster = await self.get_custom_cluster(cluster_id)
                  if not cluster:
-                     return ("I couldn't find this cluster anymore. Try switching to your personal cart or create a new cluster.", "idle", state_before, "checkout_cluster_missing", True)
+                     return ("I couldn't find this cluster anymore. Try switching to your personal cart or create a new cluster.", "idle", state_before, "checkout_cluster_missing", True, button_actions)
                  if cluster.get("owner_phone") != phone:
                      owner = await self.get_member(cluster.get("owner_phone"))
                      owner_name = (owner or {}).get("name") or "the cluster owner"
-                     return (f"Only {owner_name} can check out this shared cluster cart.", "idle", state_before, "checkout_restricted", True)
+                     return (f"Only {owner_name} can check out this shared cluster cart.", "idle", state_before, "checkout_restricted", True, button_actions)
              if not items:
-                 return ("Your cart is empty.", "idle", state_before, "cart_checkout_empty", True)
+                 return ("Your cart is empty.", "idle", state_before, "cart_checkout_empty", True, button_actions)
              
              # Check for address
              if not member.get("address"):
                   await self.upsert_member_state(phone, {"state": "awaiting_address"})
-                  return ("Wait! We don't have your delivery address yet. Please reply with your full delivery address.", "awaiting_address", state_before, "checkout_need_address", True)
+                  return ("Wait! We don't have your delivery address yet. Please reply with your full delivery address.", "awaiting_address", state_before, "checkout_need_address", True, button_actions)
              
              # Block if not paid
              if member.get("payment_status") != "paid":
-                  return ("Oops! To place an order, you need to have an active subscription. Please complete your registration/payment first or reply UPGRADE to see plans.", "idle", state_before, "checkout_blocked", True)
+                  return ("Oops! To place an order, you need to have an active subscription. Please complete your registration/payment first or reply UPGRADE to see plans.", "idle", state_before, "checkout_blocked", True, button_actions)
 
              # Create Order
              order_slug, total_val = await self.create_order_from_cart(phone)
@@ -1792,16 +1871,16 @@ class WhatsAppService:
                   if cluster:
                       owner = await self.get_member(cluster.get("owner_phone"))
                       owner_name = owner.get("name") or "the cluster owner"
-                  return (f"Only {owner_name} can check out this shared cluster cart.", "idle", state_before, "checkout_restricted", True)
+                  return (f"Only {owner_name} can check out this shared cluster cart.", "idle", state_before, "checkout_restricted", True, button_actions)
              
              if not order_slug:
-                  return ("I couldn't create an order from your cart. Please try again.", "idle", state_before, "cart_checkout_fail", True)
+                  return ("I couldn't create an order from your cart. Please try again.", "idle", state_before, "cart_checkout_fail", True, button_actions)
 
              # Cluster checkout: send payment links to all members
              if cluster:
                  summary = await self.initiate_cluster_payment_links(order_slug, total_val, cluster, member)
                  await self.upsert_member_state(phone, {"state": "idle", "last_order_slug": order_slug})
-                 return (summary, "idle", state_before, "cart_checkout_cluster", True)
+                 return (summary, "idle", state_before, "cart_checkout_cluster", True, button_actions)
              
              # Initialize Paystack for Order
              metadata = {
@@ -1826,7 +1905,7 @@ class WhatsAppService:
                      "Your order will be processed automatically after payment."
                  )
                  await self.upsert_member_state(phone, {"state": "idle", "last_order_slug": order_slug})
-                 return (msg, "idle", state_before, "cart_checkout_paystack", True)
+                 return (msg, "idle", state_before, "cart_checkout_paystack", True, button_actions)
 
              return (
                  "Sorry, I couldn't generate a payment link for your order. Please try again in a moment.",
@@ -1901,7 +1980,7 @@ class WhatsAppService:
                 cart = await self.get_cart(phone, force_personal=is_any_personal)
                 summary = self.render_cart_summary(cart)
                 reply = "\n".join(feedback) + f"\n\n{summary}"
-                return (reply, "idle", state_before, f"cart_mod", True)
+                return (reply, "idle", state_before, f"cart_mod", True, button_actions)
 
         # 4. Product Search
         if intent_guess == "catalog_search" or product_query is not None:
@@ -1964,7 +2043,7 @@ class WhatsAppService:
                     await self.add_item_to_cart(phone, product, qty=qty)
                     cart = await self.get_cart(phone)
                     summary = self.render_cart_summary(cart)
-                    return (f"✅ Added {product['name']} (x{qty}) to cart.\n{summary}", "idle", state_before, "cart_add_auto", True)
+                    return (f"✅ Added {product['name']} (x{qty}) to cart.\n{summary}", "idle", state_before, "cart_add_auto", True, button_actions)
                 
                 lines = [f"*Available products:*"]
                 for p in results:
@@ -2008,8 +2087,14 @@ class WhatsAppService:
                 if len(results) == 1:
                     product = results[0]
                     await self.upsert_member_state(phone, {"state": "awaiting_cart_action", "last_product": product})
-                    reply += "\nAdd this to your cart? Reply ADD or CHECKOUT."
-                    return (reply, "awaiting_cart_action", state_before, "catalogue_search", True)
+                    reply += "\nAdd this to your cart?"
+                    # Add buttons for single product
+                    button_actions = [
+                        {"action": "quick_reply", "content": "Add to Cart"},
+                        {"action": "quick_reply", "content": "Checkout"},
+                        {"action": "quick_reply", "content": "View Details"}
+                    ]
+                    return (reply, "awaiting_cart_action", state_before, "catalogue_search", True, button_actions)
                 else:
                     # Multiple products: store them and set state to await cart action
                     # Store first product as default, and list of all products for AI to choose from
@@ -2018,8 +2103,14 @@ class WhatsAppService:
                         "last_product": results[0] if results else None,
                         "recent_products": [{"name": p.get("name"), "sku": p.get("sku"), "price": p.get("price")} for p in results[:10]]  # Store up to 10
                     })
-                    reply += "\nWhich one would you like to add? Reply ADD or specify the product name."
-                    return (reply, "awaiting_cart_action", state_before, "catalogue_search", True)
+                    reply += "\nWhich one would you like to add?"
+                    # Add buttons for multiple products
+                    button_actions = [
+                        {"action": "quick_reply", "content": "Add First"},
+                        {"action": "quick_reply", "content": "View Cart"},
+                        {"action": "quick_reply", "content": "Search More"}
+                    ]
+                    return (reply, "awaiting_cart_action", state_before, "catalogue_search", True, button_actions)
             else:
                 # No products found - suggest categories (filtered by city)
                 categories = await self.get_product_categories()
@@ -2085,7 +2176,7 @@ class WhatsAppService:
             # Fallback for general conversation
             ai_reply = await self.ai_service.generate_response(body_clean, context)
             if ai_reply:
-                return (ai_reply, "idle", state_before, "ai_chat", True)
+                return (ai_reply, "idle", state_before, "ai_chat", True, button_actions)
 
         # Final fallback with helpful suggestions
         name = context.get("member_name", "")

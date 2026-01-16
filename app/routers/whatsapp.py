@@ -32,6 +32,12 @@ async def whatsapp_webhook(
 
     form = await request.form()
     body = (form.get("Body") or "").strip()
+    # Handle button clicks - ButtonText contains the button label
+    button_text = form.get("ButtonText", "").strip()
+    # If button was clicked, use button text as the message
+    if button_text:
+        body = button_text
+    
     from_phone = (form.get("From") or "").replace("whatsapp:", "")
     # Capture first media attachment if present
     try:
@@ -40,7 +46,7 @@ async def whatsapp_webhook(
         num_media = 0
     media_url = form.get("MediaUrl0") if num_media > 0 else None
 
-    reply_text, next_state, state_before, intent, ai_used = await service.handle_inbound(
+    reply_text, next_state, state_before, intent, ai_used, button_actions = await service.handle_inbound(
         from_phone, body, media_url=media_url
     )
 
@@ -55,10 +61,27 @@ async def whatsapp_webhook(
     )
 
     resp = MessagingResponse()
-    if settings.twilio_status_callback_url:
-        resp.message(reply_text, status_callback=settings.twilio_status_callback_url)
-    else:
-        resp.message(reply_text)
+    
+    # Check if we should use a Content Template for buttons
+    content_sid = service._get_content_sid_for_buttons(button_actions) if button_actions else None
+    
+    # Always send the dynamic message text first (contains product info, cart summary, etc.)
+    if reply_text and reply_text.strip():
+        msg1 = resp.message(reply_text)
+        if settings.twilio_status_callback_url:
+            msg1.status_callback(settings.twilio_status_callback_url)
+    
+    # Then send Content Template with buttons if available
+    if content_sid:
+        msg2 = resp.message()
+        msg2.content_sid(content_sid)
+        if settings.twilio_status_callback_url:
+            msg2.status_callback(settings.twilio_status_callback_url)
+    elif not reply_text or not reply_text.strip():
+        # If no text and no template, send empty message (shouldn't happen)
+        msg = resp.message("")
+        if settings.twilio_status_callback_url:
+            msg.status_callback(settings.twilio_status_callback_url)
 
     await service.log_message(
         phone=from_phone,
