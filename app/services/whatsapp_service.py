@@ -275,6 +275,20 @@ class WhatsAppService:
         )
         return resp.sid
 
+    async def send_capabilities_menu(self, phone: str):
+        """
+        Send the capabilities menu/help text to the user.
+        """
+        menu = (
+             "Here's how I can help you save time & money: 🌟\n\n"
+             "🛍️ *Shop*: Type 'sugar', 'rice', or 'oil' to browse.\n"
+             "🛒 *Cart*: Say 'view cart' or 'checkout'.\n"
+             "👥 *Clusters*: Shop with friends? Say 'create cluster'.\n"
+             "❓ *Help*: Just ask me anything!\n\n"
+             "What would you like to do?"
+        )
+        await self.send_outbound(phone, menu)
+
     async def send_content_template(self, phone: str, content_sid: str, content_variables: Optional[Dict[str, str]] = None) -> str:
         """
         Send a WhatsApp Content Template with buttons via REST API.
@@ -1153,13 +1167,12 @@ class WhatsAppService:
             await self.upsert_member_state(phone, {"phone": phone, "state": "awaiting_name"})
             intro_message = (
                 "Welcome to PNP Lite! 🎉\n\n"
-                "I'm your WhatsApp shopping assistant. PNP Lite is a group-buying community that gives you access to wholesale prices through coordinated bulk purchasing.\n\n"
-                "*How it works:*\n"
-                "• Shop together with friends in clusters to unlock wholesale prices\n"
-                "• Enjoy doorstep delivery\n"
-                "• Get amazing discounts on groceries and essentials\n"
-                "• Zero stress, no haggling needed\n\n"
-                "To get started, I'll need a few details. What should I call you?"
+                "I'm your smart shopping assistant. We help you and your friends shop together to unlock wholesale prices on groceries! 🥦🛒\n\n"
+                "*Why join us?*\n"
+                "• Wholesale prices 📉\n"
+                "• Shared delivery costs 🚚\n"
+                "• Easy group shopping 🤝\n\n"
+                "To get started, I just need your name. What should I call you?"
             )
             return (
                 intro_message,
@@ -1478,18 +1491,13 @@ class WhatsAppService:
                                 # User didn't specify - ask them to clarify
                                 product_names = [p.get("name", "") for p in recent_products[:5]]
                                 product_list = "\n".join([f"• {name}" for name in product_names])
-                                button_actions = [
-                                    {"action": "quick_reply", "content": "Add First"},
-                                    {"action": "quick_reply", "content": "View Cart"},
-                                    {"action": "quick_reply", "content": "Search More"}
-                                ]
                                 return (
-                                    f"I see multiple products. Which one would you like to add?\n\n{product_list}\n\nPlease specify the product name (e.g., 'Mango Rice' or 'Big Bull').",
+                                    f"I see multiple products. Which one would you like to add?\n\n{product_list}\n\nPlease specify (e.g., 'Reply to the image' or type 'Big Bull').",
                                     "awaiting_cart_action",
                                     state_before,
                                     "cart_add_clarify",
                                     True,
-                                    button_actions
+                                    []
                                 )
                             
                             # User specified something - use AI to identify the product
@@ -1724,13 +1732,6 @@ Return ONLY the product name or SKU from the list above, nothing else. If you ca
 
         # MENU/HELP Intent
         if intent_guess == "menu_help":
-            name = member.get("name", "")
-            greeting = f"Hey {name}! " if name else "Hi! "
-            help_text = (
-                f"{greeting}Here's what I can help you with:\n\n"
-                "🛒 *Shopping*\n"
-                "Just type what you're looking for (rice, oil, indomie, etc.) and I'll show you what's available\n\n"
-                "🛍️ *Your Cart*\n"
                 "Say 'cart' to see your items or 'checkout' when ready to order\n\n"
                 "👥 *Shopping Clusters*\n"
                 "Create or join groups to shop together and save\n\n"
@@ -2189,7 +2190,7 @@ Return ONLY the product name or SKU from the list above, nothing else. If you ca
                     await self.add_item_to_cart(phone, product, qty=qty)
                     cart = await self.get_cart(phone)
                     summary = self.render_cart_summary(cart)
-                    return (f"✅ Added {product['name']} (x{qty}) to cart.\n{summary}", "idle", state_before, "cart_add_auto", True, button_actions)
+                    return (f"✅ Added {product['name']} (x{qty}) to cart.\n{summary}\n\nReply CHECKOUT to proceed.", "idle", state_before, "cart_add_auto", True, [])
                 
                 # Send individual product cards with buttons
                 limit = 5
@@ -2224,9 +2225,8 @@ Return ONLY the product name or SKU from the list above, nothing else. If you ca
                     # Small delay between products to ensure order
                     await asyncio.sleep(0.5)
                     
-                # Send footer actions using Product Selection template
-                summary_vars = {"1": "Select an item above or use the options below:"}
-                await self.send_content_template(phone, self.CONTENT_SIDS["product_selection"], summary_vars)
+                # Send simple footer text instead of template
+                await self.send_outbound(phone, "Reply to any item above to add it to your cart, or type 'View Cart' to see your total.")
 
                 return ("", "awaiting_cart_action", state_before, "catalogue_search", True, [])
             else:
@@ -2297,17 +2297,12 @@ Return ONLY the product name or SKU from the list above, nothing else. If you ca
                 return (ai_reply, "idle", state_before, "ai_chat", True, button_actions)
 
         # Final fallback with helpful suggestions
-        name = context.get("member_name", "")
-        greeting = f"Hey {name}! " if name else "Hi there! "
+        await self.send_capabilities_menu(phone)
         return (
-            f"{greeting}I can help you with:\n"
-            "• Browse products - just type what you're looking for (rice, oil, etc.)\n"
-            "• View your cart - say 'cart'\n"
-            "• Checkout - say 'checkout'\n"
-            "• Get help - say 'menu'\n\n"
-            "What would you like to do?",
+            "",
             "idle",
             state_before,
             "fallback",
             ai_used,
+            []
         )
