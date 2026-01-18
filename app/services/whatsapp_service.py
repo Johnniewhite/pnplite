@@ -1126,6 +1126,27 @@ class WhatsAppService:
 
         return ("Unknown admin command.", "idle")
 
+    async def get_suggested_products_msg(self, city: str, limit: int = 5) -> str:
+        """
+        Fetches popular/available products for the city and formats a suggestion message.
+        Used during onboarding to reduce friction.
+        """
+        products = await self.search_products("", city)
+        if not products:
+            return ""
+            
+        # Take top N products
+        # Ideally we'd sort by popularity, but for now search_products sorts by name
+        suggestion_list = products[:limit]
+        
+        lines = ["\n*Here are some popular items to get you started:*"]
+        for p in suggestion_list:
+            price = p.get("price", 0)
+            lines.append(f"• {p['name']} (₦{price:,.0f})")
+            
+        lines.append("\n👇 Reply with any item name to add it directly to your cart!")
+        return "\n".join(lines)
+
     async def join_cluster_by_id(self, phone: str, cluster_id: str) -> str:
         """
         Logic for a user to join a cluster. Handles checks, db updates, and OWNER NOTIFICATION.

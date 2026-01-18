@@ -105,11 +105,21 @@ async def paystack_webhook(
                     )
                     
                     # 2. Notify user about Membership
+                    # Prepare message with product suggestions
+                    suggestions = ""
                     try:
-                        await service.send_outbound(
-                            phone, 
-                            f"✅ Your {membership_type} membership has been activated! You can now start adding items to your cart."
-                        )
+                        city = member_doc.get("city")
+                        if city:
+                            suggestions = await service.get_suggested_products_msg(city)
+                    except Exception as e:
+                        f.write(f"WARNING: Failed to fetch suggestions: {e}\n")
+
+                    try:
+                        msg = f"✅ Your {membership_type} membership has been activated! You can now start adding items to your cart."
+                        if suggestions:
+                            msg += f"\n{suggestions}"
+                            
+                        await service.send_outbound(phone, msg)
                     except Exception as e:
                         f.write(f"ERROR: Failed to send outbound message: {e}\n")
                         
