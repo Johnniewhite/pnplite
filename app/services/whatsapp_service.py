@@ -2195,26 +2195,19 @@ Return ONLY the product name or SKU from the list above, nothing else. If you ca
                     price_display = f"₦{base_price_val:,.0f}"
                     sku = p.get("sku", "")
                     
-                    # Construct Body Text
-                    body_text = f"{p['name']} • {price_display} • SKU: {sku}"
-                    
-                    # Variables for template
-                    # Assuming {{1}} is Body Text. We try to pass media via variable '1' if possible or header logic.
-                    # Also try to pass SKU as separate variable if template uses it? 
-                    # We'll stick to '1' -> body_text for now.
-                    variables = {"1": body_text}
-                    
-                    # Add image to variables if available (using a few common keys for media headers)
+                    # 1. Send Product Details first (Image + Text)
+                    # This ensures the user sees the product info even if the template doesn't support variables
+                    caption = f"{p['name']} • {price_display}\nSKU: {sku}"
                     img_url = self._normalize_media_url(p.get("image_url"))
-                    # Note: Passing media_url in variables requires knowing the specific variable mapping.
-                    # Use 'media' or 'header' as guess? Or '0'?
-                    # Since we can't be sure, we rely on the body text.
                     
-                    # Send Content Template
-                    # We assume 'add_to_cart' template is configured to use {{1}} for text
+                    await self.send_outbound(phone, caption, media_url=img_url)
+                    
+                    # 2. Send Button Template immediately after
+                    # The buttons will appear "under" the product message
+                    variables = {"1": p['name']} 
                     sid = await self.send_content_template(phone, self.CONTENT_SIDS["add_to_cart"], variables)
                     
-                    # Save context for this message
+                    # Save context for the BUTTON message so clicks work
                     await self.save_msg_context(sid, {"sku": sku, "name": p['name'], "price": base_price_val})
                     
                 # Send footer actions using Product Selection template
