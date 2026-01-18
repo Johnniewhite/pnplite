@@ -426,6 +426,17 @@ class WhatsAppService:
         })
         return await cursor.to_list(length=20)
 
+    async def save_msg_context(self, message_sid: str, context: Dict[str, Any]):
+        if not message_sid: return
+        context["created_at"] = datetime.utcnow()
+        await self.db.message_contexts.update_one(
+            {"_id": message_sid}, {"$set": context}, upsert=True
+        )
+
+    async def get_msg_context(self, message_sid: str) -> Optional[Dict[str, Any]]:
+        if not message_sid: return None
+        return await self.db.message_contexts.find_one({"_id": message_sid})
+
     async def get_cart(self, phone: str, force_personal: bool = False) -> Dict[str, Any]:
         member = await self.get_member(phone)
         cluster_id = member.get("current_cluster_id")
@@ -1100,7 +1111,7 @@ class WhatsAppService:
         return ("Unknown admin command.", "idle")
 
     async def handle_inbound(
-        self, phone: str, body: str, media_url: Optional[str] = None
+        self, phone: str, body: str, media_url: Optional[str] = None, button_payload: Optional[str] = None, context_id: Optional[str] = None
     ) -> Tuple[str, str, str | None, str | None, bool, List[Dict[str, str]]]:
         """
         Returns: (reply_text, next_state, state_before, intent, ai_used, button_actions)
@@ -2007,6 +2018,44 @@ Return ONLY the product name or SKU from the list above, nothing else. If you ca
 
         # 3. Cart Modification (nl add/remove)
         if intent_guess in {"cart_add", "cart_remove"} and self.ai_service:
+            # Check for button payload first
+            if button_payload and button_payload.startswith("ADD_"):
+                sku = button_payload.replace("ADD_", "").strip()
+                # Find product by SKU
+                product = await self.db.products.find_one({"sku": sku})
+                if product:
+                    # Check city visibility
+                    if self._product_visible_for_city(product, member.get("city")):
+                        await self.add_item_to_cart(phone, product, qty=1)
+                        cart = await self.get_cart(phone)
+                        summary = self.render_cart_summary(cart)
+                        
+                        button_actions = [
+                            {"action": "quick_reply", "content": "Checkout"},
+                            {"action": "quick_reply", "content": "Add More"},
+                            {"action": "quick_reply", "content": "Remove Item"}
+                        ]
+                        return (f"✅ Added {product['name']} to your cart.\n{summary}", "idle", state_before, "cart_add_payload", True, button_actions)
+            
+            # Check context ID for linked product (from Reply Context)
+            if context_id and not button_payload:
+                ctx = await self.get_msg_context(context_id)
+                if ctx and ctx.get("sku"):
+                    sku = ctx.get("sku")
+                    product = await self.db.products.find_one({"sku": sku})
+                    if product:
+                        if self._product_visible_for_city(product, member.get("city")):
+                            await self.add_item_to_cart(phone, product, qty=1)
+                            cart = await self.get_cart(phone)
+                            summary = self.render_cart_summary(cart)
+                            
+                            button_actions = [
+                                {"action": "quick_reply", "content": "Checkout"},
+                                {"action": "quick_reply", "content": "Add More"},
+                                {"action": "quick_reply", "content": "Remove Item"}
+                            ]
+                            return (f"✅ Added {product['name']} to your cart.\n{summary}", "idle", state_before, "cart_add_context", True, button_actions)
+
             # Use AI to extract all actions (can be multiple)
             actions = await self.ai_service.extract_cart_action(body_clean)
             if actions:
@@ -2126,72 +2175,53 @@ Return ONLY the product name or SKU from the list above, nothing else. If you ca
                     summary = self.render_cart_summary(cart)
                     return (f"✅ Added {product['name']} (x{qty}) to cart.\n{summary}", "idle", state_before, "cart_add_auto", True, button_actions)
                 
-                lines = [f"*Available products:*"]
-                for p in results:
+                # Send individual product cards with buttons
+                limit = 5
+                
+                # Store products for context
+                await self.upsert_member_state(phone, {
+                    "state": "awaiting_cart_action", 
+                    "last_product": results[0] if results else None,
+                    "recent_products": [{"name": p.get("name"), "sku": p.get("sku"), "price": p.get("price")} for p in results[:10]]
+                })
+
+                for p in results[:limit]:
                     base_price = p.get("price", 0)
                     try:
                         base_price_val = float(str(base_price).replace(",", "").replace("₦", "").strip())
                     except:
                         base_price_val = 0
                     
-                    name = p.get("name", "Unknown")
-                    clusters = p.get("clusters") or []
-                    
-                    # Calculate slot cost and total cost if cluster info available
                     price_display = f"₦{base_price_val:,.0f}"
+                    sku = p.get("sku", "")
                     
-                    if clusters:
-                        for c in clusters:
-                            people_per_cluster = c.get("people_per_cluster") or 1
-                            if people_per_cluster > 0:
-                                slot_cost = base_price_val / people_per_cluster
-                                price_display = f"₦{base_price_val:,.0f} (Slot: ₦{slot_cost:,.0f}, Total: ₦{base_price_val:,.0f})"
-                                break
+                    # Construct Body Text
+                    body_text = f"{p['name']} • {price_display} • SKU: {sku}"
                     
-                    cluster_note = ""
-                    if clusters:
-                        snippets = []
-                        for c in clusters:
-                            seg = c.get("city") or ""
-                            if c.get("area"):
-                                seg += f" / {c['area']}"
-                            if c.get("people_per_cluster"):
-                                seg += f" • {c['people_per_cluster']} ppl/cluster"
-                            snippets.append(seg)
-                        if snippets:
-                            cluster_note = " [" + "; ".join(snippets) + "]"
-                    lines.append(f"• {name}: {price_display}{cluster_note}")
-                
-                reply = "\n".join(lines)
-                await self.send_catalog_cards(phone, results, limit=5)
-                
-                if len(results) == 1:
-                    product = results[0]
-                    await self.upsert_member_state(phone, {"state": "awaiting_cart_action", "last_product": product})
-                    reply += "\nAdd this to your cart?"
-                    # Add buttons for single product
-                    button_actions = [
-                        {"action": "quick_reply", "content": "Add to Cart"},
-                        {"action": "quick_reply", "content": "Checkout"},
-                        {"action": "quick_reply", "content": "View Details"}
-                    ]
-                    return (reply, "awaiting_cart_action", state_before, "catalogue_search", True, button_actions)
-                else:
-                    # Multiple products: store them and set state to await cart action
-                    # Store first product as default, and list of all products for AI to choose from
-                    await self.upsert_member_state(phone, {
-                        "state": "awaiting_cart_action", 
-                        "last_product": results[0] if results else None,
-                        "recent_products": [{"name": p.get("name"), "sku": p.get("sku"), "price": p.get("price")} for p in results[:10]]  # Store up to 10
-                    })
-                    reply += "\nWhich one would you like to add?"
-                    # Add buttons for multiple products
-                    button_actions = [
-                        {"action": "quick_reply", "content": "Add First"},
-                        {"action": "quick_reply", "content": "View Cart"},
-                        {"action": "quick_reply", "content": "Search More"}
-                    ]
-                    return (reply, "awaiting_cart_action", state_before, "catalogue_search", True, button_actions)
+                    # Variables for template
+                    # Assuming {{1}} is Body Text. We try to pass media via variable '1' if possible or header logic.
+                    # Also try to pass SKU as separate variable if template uses it? 
+                    # We'll stick to '1' -> body_text for now.
+                    variables = {"1": body_text}
+                    
+                    # Add image to variables if available (using a few common keys for media headers)
+                    img_url = self._normalize_media_url(p.get("image_url"))
+                    # Note: Passing media_url in variables requires knowing the specific variable mapping.
+                    # Use 'media' or 'header' as guess? Or '0'?
+                    # Since we can't be sure, we rely on the body text.
+                    
+                    # Send Content Template
+                    # We assume 'add_to_cart' template is configured to use {{1}} for text
+                    sid = await self.send_content_template(phone, self.CONTENT_SIDS["add_to_cart"], variables)
+                    
+                    # Save context for this message
+                    await self.save_msg_context(sid, {"sku": sku, "name": p['name'], "price": base_price_val})
+                    
+                # Send footer actions using Product Selection template
+                summary_vars = {"1": "Select an item above or use the options below:"}
+                await self.send_content_template(phone, self.CONTENT_SIDS["product_selection"], summary_vars)
+
+                return ("", "awaiting_cart_action", state_before, "catalogue_search", True, [])
             else:
                 # No products found - suggest categories (filtered by city)
                 categories = await self.get_product_categories()

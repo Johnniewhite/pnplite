@@ -35,7 +35,9 @@ async def whatsapp_webhook(
     body = (form.get("Body") or "").strip()
     # Handle button clicks - ButtonText contains the button label
     button_text = form.get("ButtonText", "").strip()
-    # If button was clicked, use button text as the message
+    button_payload = form.get("ButtonPayload", "").strip()
+    
+    # If button was clicked, use button text as the message unless we have a payload
     if button_text:
         body = button_text
     
@@ -47,8 +49,19 @@ async def whatsapp_webhook(
         num_media = 0
     media_url = form.get("MediaUrl0") if num_media > 0 else None
 
+    original_replied_sid = form.get("OriginalRepliedMessageSid", "").strip() or form.get("Context", {}).get("MessageId") # Fallback to Context logic if parsed manually, but form usually has it flattened? Twilio flattens it.
+    
+    # Check Context if flattened not available
+    if not original_replied_sid and form.get("Context"):
+        import json
+        try:
+            ctx = json.loads(form.get("Context"))
+            original_replied_sid = ctx.get("MessageId") or ctx.get("id")
+        except:
+            pass
+
     reply_text, next_state, state_before, intent, ai_used, button_actions = await service.handle_inbound(
-        from_phone, body, media_url=media_url
+        from_phone, body, media_url=media_url, button_payload=button_payload, context_id=original_replied_sid
     )
 
     await service.log_message(
