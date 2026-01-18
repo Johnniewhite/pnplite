@@ -89,12 +89,22 @@ async def paystack_webhook(
                 if event_type == "membership":
                     membership_type = metadata.get("membership_type")
                     f.write(f"Processing membership for {phone}: {membership_type}\n")
-                    # Update member status
+                    
+                    # 1. Update member status
+                    # We also fetch the member to see if pending_cluster_join is set
+                    member_doc = await mongo.db.members.find_one({"phone": phone})
+                    pending_cluster = member_doc.get("pending_cluster_join") if member_doc else None
+                    
+                    update_fields = {"payment_status": "paid", "membership_type": membership_type}
+                    if pending_cluster:
+                        update_fields["pending_cluster_join"] = None # Clear it
+                        
                     await mongo.db.members.update_one(
                         {"phone": phone},
-                        {"$set": {"payment_status": "paid", "membership_type": membership_type}}
+                        {"$set": update_fields}
                     )
-                    # Notify user
+                    
+                    # 2. Notify user about Membership
                     try:
                         await service.send_outbound(
                             phone, 
@@ -102,6 +112,15 @@ async def paystack_webhook(
                         )
                     except Exception as e:
                         f.write(f"ERROR: Failed to send outbound message: {e}\n")
+                        
+                    # 3. Handle Auto-Join if pending
+                    if pending_cluster:
+                        try:
+                            f.write(f"Executing pending auto-join for {phone} to cluster {pending_cluster}\n")
+                            join_msg = await service.join_cluster_by_id(phone, pending_cluster)
+                            await service.send_outbound(phone, join_msg)
+                        except Exception as e:
+                            f.write(f"ERROR: Failed to execute auto-join: {e}\n")
                     
                 elif event_type == "order":
                     order_slug = metadata.get("order_slug")

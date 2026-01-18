@@ -1126,6 +1126,41 @@ class WhatsAppService:
 
         return ("Unknown admin command.", "idle")
 
+    async def join_cluster_by_id(self, phone: str, cluster_id: str) -> str:
+        """
+        Logic for a user to join a cluster. Handles checks, db updates, and OWNER NOTIFICATION.
+        Returns the success/error message to send to the joiner.
+        """
+        cluster = await self.get_custom_cluster(cluster_id)
+        if not cluster:
+            return "Sorry, I couldn't find that cluster."
+
+        member = await self.get_member(phone)
+        if member.get("payment_status") != "paid":
+             return "You need an active subscription before joining a shared cluster. Reply UPGRADE to see plans."
+
+        if len(cluster.get("members", [])) >= cluster.get("max_people", 5):
+             return f"Sorry, the cluster '{cluster['name']}' is already full."
+
+        if phone not in cluster.get("members", []):
+            cluster["members"].append(phone)
+            await self.save_custom_cluster(cluster)
+            
+            # NOTIFY OWNER
+            owner_phone = cluster.get("owner_phone")
+            if owner_phone and owner_phone != phone:
+                joiner_name = member.get("name") or phone
+                await self.send_outbound(
+                    owner_phone,
+                    f"👋 {joiner_name} just joined your cluster '{cluster['name']}'!"
+                )
+
+        await self.upsert_member_state(phone, {"current_cluster_id": cluster_id, "state": "idle"})
+        return (
+            f"✅ You've joined the cluster '{cluster['name']}'!\n\n"
+            "You now share a cart with other members. Anyone can add items, but only the creator can checkout."
+        )
+
     async def handle_inbound(
         self, phone: str, body: str, media_url: Optional[str] = None, button_payload: Optional[str] = None, context_id: Optional[str] = None
     ) -> Tuple[str, str, str | None, str | None, bool, List[Dict[str, str]]]:
@@ -1148,12 +1183,21 @@ class WhatsAppService:
 
         # New user onboarding with friendly intro
         if not member:
+            # Check if joining via link
+            pending_join = None
+            if "JOIN_CLUSTER_" in body_clean:
+                try:
+                    pending_join = body_clean.split("JOIN_CLUSTER_")[1].strip()
+                except:
+                    pass
+
             # New Member logic
             member = {
                 "phone": phone,
                 "join_date": datetime.utcnow().strftime("%Y-%m-%d"),
                 "state": "idle",
                 "payment_status": "unpaid",
+                "pending_cluster_join": pending_join
             }
             await self.db.members.insert_one(member)
             
@@ -1647,35 +1691,10 @@ Return ONLY the product name or SKU from the list above, nothing else. If you ca
         # CRITICAL KEYWORD OVERRIDES (system-level commands only)
         if "JOIN_CLUSTER_" in body_clean:
             cluster_id = body_clean.split("JOIN_CLUSTER_")[1].strip()
-            cluster = await self.get_custom_cluster(cluster_id)
-            if not cluster:
-                return ("Sorry, I couldn't find that cluster.", "idle", state_before, "cluster_join_fail", False, button_actions)
-
-            if member.get("payment_status") != "paid":
-                return (
-                    "You need an active subscription before joining a shared cluster. Reply UPGRADE to see plans.",
-                    "idle",
-                    state_before,
-                    "cluster_join_blocked_unpaid",
-                    False,
-                )
-
-            if len(cluster.get("members", [])) >= cluster.get("max_people", 5):
-                 return (f"Sorry, the cluster '{cluster['name']}' is already full.", "idle", state_before, "cluster_full", False, button_actions)
-
-            if phone not in cluster.get("members", []):
-                cluster["members"].append(phone)
-                await self.save_custom_cluster(cluster)
-
-            await self.upsert_member_state(phone, {"current_cluster_id": cluster_id, "state": "idle"})
-            return (
-                f"✅ You've joined the cluster '{cluster['name']}'!\n\n"
-                "You now share a cart with other members. Anyone can add items, but only the creator can checkout.",
-                "idle",
-                state_before,
-                "cluster_join_success",
-                False
-            )
+            msg = await self.join_cluster_by_id(phone, cluster_id)
+            # Determine success based on message content for specific flow/tag
+            success_tag = "cluster_join_response"
+            return (msg, "idle", state_before, success_tag, False, button_actions)
 
         # Cluster leave is handled by AI intent classification - no keyword matching needed
 
