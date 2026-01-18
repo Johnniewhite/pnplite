@@ -1732,14 +1732,8 @@ Return ONLY the product name or SKU from the list above, nothing else. If you ca
 
         # MENU/HELP Intent
         if intent_guess == "menu_help":
-                "Say 'cart' to see your items or 'checkout' when ready to order\n\n"
-                "👥 *Shopping Clusters*\n"
-                "Create or join groups to shop together and save\n\n"
-                "🔗 *Share & Earn*\n"
-                "Say 'referral' to get your invite link\n\n"
-                "Type what you need and let's get started!"
-            )
-            return (help_text, "idle", state_before, "menu_help", ai_used, button_actions)
+            await self.send_capabilities_menu(phone)
+            return ("", "idle", state_before, "menu_help", True, [])
 
         # PAYMENT CONFIRMATION Intent
         if intent_guess == "payment_confirmation":
