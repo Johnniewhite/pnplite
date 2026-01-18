@@ -2001,7 +2001,7 @@ Return ONLY the product name or SKU from the list above, nothing else. If you ca
              # Check for address
              if not member.get("address"):
                   await self.upsert_member_state(phone, {"state": "awaiting_address"})
-                  return ("Wait! We don't have your delivery address yet. Please reply with your full delivery address.", "awaiting_address", state_before, "checkout_need_address", True, [])
+                  return ("Wait! We don't have your delivery address yet. Please reply with your full delivery address and contact phone number.", "awaiting_address", state_before, "checkout_need_address", True, [])
              
              # Block if not paid
              if member.get("payment_status") != "paid":
