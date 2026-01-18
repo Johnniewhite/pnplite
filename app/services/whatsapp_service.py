@@ -1313,6 +1313,7 @@ class WhatsAppService:
                 state_before,
                 "city",
                 ai_used,
+                []
             )
 
         if state == "awaiting_city":
@@ -1354,6 +1355,7 @@ class WhatsAppService:
                     state_before,
                     "city",
                     ai_used,
+                    []
                 )
 
             await self.upsert_member_state(phone, {"city": city_value, "state": "awaiting_membership"})
@@ -1378,6 +1380,7 @@ class WhatsAppService:
                 state_before,
                 "membership",
                 ai_used,
+                []
             )
 
         if state == "awaiting_membership":
@@ -1400,6 +1403,7 @@ class WhatsAppService:
                     state_before,
                     "membership",
                     ai_used,
+                    []
                 )
             await self.upsert_member_state(
                 phone,
@@ -1432,7 +1436,8 @@ class WhatsAppService:
                     "idle", # Direct to idle as payment is automated
                     state_before,
                     "membership_paystack",
-                    True
+                    True,
+                    []
                 )
 
             return (
@@ -1441,6 +1446,7 @@ class WhatsAppService:
                 state_before,
                 "membership_paystack_fail",
                 ai_used,
+                []
             )
 
         if state == "awaiting_payment_proof":
@@ -1451,6 +1457,7 @@ class WhatsAppService:
                 state_before,
                 "payment_reminder",
                 ai_used,
+                []
             )
 
         if state == "awaiting_order":
@@ -1462,6 +1469,7 @@ class WhatsAppService:
                 state_before,
                 "order_capture",
                 ai_used,
+                []
             )
 
         if state == "awaiting_address":
