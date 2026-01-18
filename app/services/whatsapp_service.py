@@ -12,7 +12,9 @@ from app.models.broadcast import BroadcastLog, MessageStatusLog
 from app.services.ai import AIService
 from app.services.paystack import PaystackService
 from app.config.settings import Settings
+from app.config.settings import Settings
 from urllib.parse import urlparse, urlunparse
+import asyncio
 
 
 class WhatsAppService:
@@ -2202,6 +2204,9 @@ Return ONLY the product name or SKU from the list above, nothing else. If you ca
                     
                     await self.send_outbound(phone, caption, media_url=img_url)
                     
+                    # Wait for media message to be processed (enforce order)
+                    await asyncio.sleep(1.0)
+                    
                     # 2. Send Button Template immediately after
                     # The buttons will appear "under" the product message
                     variables = {"1": p['name']} 
@@ -2209,6 +2214,9 @@ Return ONLY the product name or SKU from the list above, nothing else. If you ca
                     
                     # Save context for the BUTTON message so clicks work
                     await self.save_msg_context(sid, {"sku": sku, "name": p['name'], "price": base_price_val})
+                    
+                    # Wait before next product to avoid clutter/race conditions
+                    await asyncio.sleep(0.5)
                     
                 # Send footer actions using Product Selection template
                 summary_vars = {"1": "Select an item above or use the options below:"}
