@@ -1742,7 +1742,8 @@ Return ONLY the product name or SKU from the list above, nothing else. If you ca
                 "idle",
                 state_before,
                 "ai_error",
-                False
+                False,
+                [] 
             )
 
         # Set product query for catalog searches
@@ -1766,6 +1767,7 @@ Return ONLY the product name or SKU from the list above, nothing else. If you ca
                     state_before,
                     "payment_proof_received",
                     ai_used,
+                    []
                 )
             else:
                 # They're asking about payment status - CHECK ACTUAL STATUS FIRST
@@ -1779,6 +1781,7 @@ Return ONLY the product name or SKU from the list above, nothing else. If you ca
                         state_before,
                         "payment_already_confirmed",
                         ai_used,
+                        []
                     )
                 else:
                     return (
@@ -1788,6 +1791,7 @@ Return ONLY the product name or SKU from the list above, nothing else. If you ca
                         state_before,
                         "payment_status_inquiry",
                         ai_used,
+                        []
                     )
 
         if intent_guess == "cluster_join":
@@ -1799,6 +1803,7 @@ Return ONLY the product name or SKU from the list above, nothing else. If you ca
                 state_before,
                 "cluster_join_link_required",
                 ai_used,
+                []
             )
 
         if intent_guess == "cluster_create":
@@ -1811,7 +1816,8 @@ Return ONLY the product name or SKU from the list above, nothing else. If you ca
                     "awaiting_cluster_limit",
                     state_before,
                     "cluster_create_start",
-                    True
+                    True,
+                    []
                 )
             else:
                 await self.upsert_member_state(phone, {"state": "awaiting_cluster_name"})
