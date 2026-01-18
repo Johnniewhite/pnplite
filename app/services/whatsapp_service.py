@@ -2221,18 +2221,7 @@ Return ONLY the product name or SKU from the list above, nothing else. If you ca
                     # Save context for the PRODUCT CARD (image/text) so replies work
                     await self.save_msg_context(card_sid, {"sku": sku, "name": p['name'], "price": base_price_val})
                     
-                    # Wait for media message to be processed (enforce order)
-                    await asyncio.sleep(1.0)
-                    
-                    # 2. Send Button Template immediately after
-                    # The buttons will appear "under" the product message
-                    variables = {"1": p['name']} 
-                    sid = await self.send_content_template(phone, self.CONTENT_SIDS["add_to_cart"], variables)
-                    
-                    # Save context for the BUTTON message so clicks work
-                    await self.save_msg_context(sid, {"sku": sku, "name": p['name'], "price": base_price_val})
-                    
-                    # Wait before next product to avoid clutter/race conditions
+                    # Small delay between products to ensure order
                     await asyncio.sleep(0.5)
                     
                 # Send footer actions using Product Selection template
