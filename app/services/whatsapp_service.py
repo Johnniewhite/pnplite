@@ -1441,6 +1441,20 @@ class WhatsAppService:
                     if recent_products:
                         cart_context["available_products"] = [p.get("name", "") for p in recent_products[:5]]
                     
+                    # PRIORITY: Check for Reply Context (Manual Reply to a specific product message)
+                    if context_id:
+                         ctx = await self.get_msg_context(context_id)
+                         if ctx and ctx.get("sku"):
+                             sku = ctx.get("sku")
+                             # Override recent products logic if we have a direct link
+                             found_p = await self.db.products.find_one({"sku": sku})
+                             if found_p:
+                                 # Inject into context for AI or just force the product
+                                 cart_context["forced_product_sku"] = sku
+                                 # We can also just set product=found_p and recent_products=[found_p] to trick the logic below
+                                 product = found_p
+                                 recent_products = [found_p] # Treat as single product scenario
+
                     intent_check = await self.ai_service.classify_intent(body_clean, context=cart_context)
                     
                     if intent_check == "cart_checkout":
