@@ -2216,7 +2216,10 @@ Return ONLY the product name or SKU from the list above, nothing else. If you ca
                     caption = f"{p['name']} • {price_display}\nSKU: {sku}"
                     img_url = self._normalize_media_url(p.get("image_url"))
                     
-                    await self.send_outbound(phone, caption, media_url=img_url)
+                    card_sid = await self.send_outbound(phone, caption, media_url=img_url)
+                    
+                    # Save context for the PRODUCT CARD (image/text) so replies work
+                    await self.save_msg_context(card_sid, {"sku": sku, "name": p['name'], "price": base_price_val})
                     
                     # Wait for media message to be processed (enforce order)
                     await asyncio.sleep(1.0)
