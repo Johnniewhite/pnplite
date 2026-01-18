@@ -1906,45 +1906,47 @@ Return ONLY the product name or SKU from the list above, nothing else. If you ca
                     return (f"❓ I couldn't find a cluster named '{spec_cluster_name}' among your groups.", "idle", state_before, "cart_view_fail", True, button_actions)
 
              force_p = (target == "personal")
-             cart = await self.get_cart(phone, force_personal=force_p)
-             summary = self.render_cart_summary(cart)
              
-             # Add cart action buttons
-             cart_button_actions = [
-                 {"action": "quick_reply", "content": "Checkout"},
-                 {"action": "quick_reply", "content": "Add More"},
-                 {"action": "quick_reply", "content": "Remove Item"}
-             ]
+             # 1. Get Personal Cart Summary
+             p_cart = await self.get_cart(phone, force_personal=True)
+             p_summary = self.render_cart_summary(p_cart, with_instructions=False)
              
-             # If showing one, and they have items in the other, mention it
-             other_target = "personal" if target == "cluster" else "cluster"
-             other_cart = await self.get_cart(phone, force_personal=(other_target == "personal"))
-             if other_cart.get("items"):
-                 summary_other = self.render_cart_summary(other_cart, with_instructions=False)
-                 combined = [
-                     f"Here are both carts so you can choose:",
-                     f"*{cart.get('cluster_name') or 'Cluster Cart' if target == 'cluster' else 'Personal Cart'}*",
-                     summary,
-                     "",
-                     f"*{other_cart.get('cluster_name') or 'Cluster Cart' if other_target == 'cluster' else 'Personal Cart'}*",
-                     summary_other,
-                     "",
-                     "Reply 'cluster cart' or 'personal cart' to focus on one."
-                 ]
-                 return ("\n".join(combined), "idle", state_before, "cart_view_dual", True, cart_button_actions)
+             # 2. Check for Active Cluster
+             cluster_id = member.get("current_cluster_id")
+             c_summary = None
+             c_name = None
+             
+             if cluster_id:
+                 cluster = await self.get_custom_cluster(cluster_id)
+                 if cluster and cluster.get("is_active"):
+                     c_name = cluster.get("name")
+                     c_cart = await self.get_cart(phone, force_personal=False)
+                     c_summary = self.render_cart_summary(c_cart, with_instructions=False)
+            
+             # 3. Build Response
+             replies = []
+             
+             # If strictly asked for personal, or no cluster exists
+             if target == "personal" or (not c_summary):
+                 replies.append(f"🛒 *Your Personal Cart*:\n{p_summary}")
+                 if c_summary:
+                     replies.append(f"\n_You also have items in '{c_name}'. Reply 'cluster cart' to switch._")
+             
+             # If strictly asked for cluster
+             elif target == "cluster" and c_summary:
+                 replies.append(f"👥 *Cluster Cart ({c_name})*:\n{c_summary}")
+                 replies.append(f"\n_Reply 'personal cart' to switch to your personal items._")
+                 
+             # Default (General 'view cart'): Show both if they exist, otherwise just personal
              else:
-                 if target == "cluster" and not cart.get("items"):
-                     # If cluster cart empty but personal has items, prompt
-                     if other_cart.get("items"):
-                         return (
-                             "Your cluster cart is empty. I found items in your personal cart. Reply 'personal cart' to see it.",
-                             "idle",
-                             state_before,
-                             "cart_view_switch",
-                             True,
-                             cart_button_actions,
-                         )
-                 return (summary, "idle", state_before, "cart_view", True, cart_button_actions)
+                 replies.append(f"🛒 *Your Personal Cart*:\n{p_summary}")
+                 if c_summary:
+                      replies.append(f"\n👥 *Cluster Cart ({c_name})*:\n{c_summary}")
+                      replies.append("\n_Reply 'cluster' or 'personal' to focus on one._")
+
+             replies.append("\n👉 Reply *CHECKOUT* to place your order.")
+             
+             return ("\n\n".join(replies), "idle", state_before, "cart_view", True, [])
 
         # 2. Checkout
         if intent_guess == "cart_checkout":
@@ -1955,22 +1957,22 @@ Return ONLY the product name or SKU from the list above, nothing else. If you ca
              if cluster_id:
                  cluster = await self.get_custom_cluster(cluster_id)
                  if not cluster:
-                     return ("I couldn't find this cluster anymore. Try switching to your personal cart or create a new cluster.", "idle", state_before, "checkout_cluster_missing", True, button_actions)
+                     return ("I couldn't find this cluster anymore. Try switching to your personal cart or create a new cluster.", "idle", state_before, "checkout_cluster_missing", True, [])
                  if cluster.get("owner_phone") != phone:
                      owner = await self.get_member(cluster.get("owner_phone"))
                      owner_name = (owner or {}).get("name") or "the cluster owner"
-                     return (f"Only {owner_name} can check out this shared cluster cart.", "idle", state_before, "checkout_restricted", True, button_actions)
+                     return (f"Only {owner_name} can check out this shared cluster cart.", "idle", state_before, "checkout_restricted", True, [])
              if not items:
-                 return ("Your cart is empty.", "idle", state_before, "cart_checkout_empty", True, button_actions)
+                 return ("Your cart is empty.", "idle", state_before, "cart_checkout_empty", True, [])
              
              # Check for address
              if not member.get("address"):
                   await self.upsert_member_state(phone, {"state": "awaiting_address"})
-                  return ("Wait! We don't have your delivery address yet. Please reply with your full delivery address.", "awaiting_address", state_before, "checkout_need_address", True, button_actions)
+                  return ("Wait! We don't have your delivery address yet. Please reply with your full delivery address.", "awaiting_address", state_before, "checkout_need_address", True, [])
              
              # Block if not paid
              if member.get("payment_status") != "paid":
-                  return ("Oops! To place an order, you need to have an active subscription. Please complete your registration/payment first or reply UPGRADE to see plans.", "idle", state_before, "checkout_blocked", True, button_actions)
+                  return ("Oops! To place an order, you need to have an active subscription. Please complete your registration/payment first or reply UPGRADE to see plans.", "idle", state_before, "checkout_blocked", True, [])
 
              # Create Order
              order_slug, total_val = await self.create_order_from_cart(phone)
@@ -1983,16 +1985,16 @@ Return ONLY the product name or SKU from the list above, nothing else. If you ca
                   if cluster:
                       owner = await self.get_member(cluster.get("owner_phone"))
                       owner_name = owner.get("name") or "the cluster owner"
-                  return (f"Only {owner_name} can check out this shared cluster cart.", "idle", state_before, "checkout_restricted", True, button_actions)
+                  return (f"Only {owner_name} can check out this shared cluster cart.", "idle", state_before, "checkout_restricted", True, [])
              
              if not order_slug:
-                  return ("I couldn't create an order from your cart. Please try again.", "idle", state_before, "cart_checkout_fail", True, button_actions)
+                  return ("I couldn't create an order from your cart. Please try again.", "idle", state_before, "cart_checkout_fail", True, [])
 
              # Cluster checkout: send payment links to all members
              if cluster:
                  summary = await self.initiate_cluster_payment_links(order_slug, total_val, cluster, member)
                  await self.upsert_member_state(phone, {"state": "idle", "last_order_slug": order_slug})
-                 return (summary, "idle", state_before, "cart_checkout_cluster", True, button_actions)
+                 return (summary, "idle", state_before, "cart_checkout_cluster", True, [])
              
              # Initialize Paystack for Order
              metadata = {
@@ -2017,7 +2019,7 @@ Return ONLY the product name or SKU from the list above, nothing else. If you ca
                      "Your order will be processed automatically after payment."
                  )
                  await self.upsert_member_state(phone, {"state": "idle", "last_order_slug": order_slug})
-                 return (msg, "idle", state_before, "cart_checkout_paystack", True, button_actions)
+                 return (msg, "idle", state_before, "cart_checkout_paystack", True, [])
 
              return (
                  "Sorry, I couldn't generate a payment link for your order. Please try again in a moment.",
@@ -2041,12 +2043,7 @@ Return ONLY the product name or SKU from the list above, nothing else. If you ca
                         cart = await self.get_cart(phone)
                         summary = self.render_cart_summary(cart)
                         
-                        button_actions = [
-                            {"action": "quick_reply", "content": "Checkout"},
-                            {"action": "quick_reply", "content": "Add More"},
-                            {"action": "quick_reply", "content": "Remove Item"}
-                        ]
-                        return (f"✅ Added {product['name']} to your cart.\n{summary}", "idle", state_before, "cart_add_payload", True, button_actions)
+                        return (f"✅ Added {product['name']} (x1) to cart.\n{summary}\n\nReply CHECKOUT to proceed.", "idle", state_before, "cart_add_payload", True, [])
             
             # Check context ID for linked product (from Reply Context)
             if context_id and not button_payload:
@@ -2130,7 +2127,7 @@ Return ONLY the product name or SKU from the list above, nothing else. If you ca
                 cart = await self.get_cart(phone, force_personal=is_any_personal)
                 summary = self.render_cart_summary(cart)
                 reply = "\n".join(feedback) + f"\n\n{summary}"
-                return (reply, "idle", state_before, f"cart_mod", True, button_actions)
+                return (reply, "idle", state_before, f"cart_mod", True, [])
 
         # 4. Product Search
         if intent_guess == "catalog_search" or product_query is not None:
