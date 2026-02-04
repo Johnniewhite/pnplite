@@ -1336,17 +1336,20 @@ class WhatsAppService:
         # Handle Lagos Mainland/Island sub-selection
         if state == "awaiting_lagos_area":
             lagos_area = None
-            body_lower = body_clean.lower().strip()
 
-            # Check for Mainland or Island
-            if "mainland" in body_lower or body_lower in ["1", "main", "land"]:
-                lagos_area = "Lagos Mainland"
-            elif "island" in body_lower or body_lower in ["2", "vi", "lekki", "ikoyi"]:
-                lagos_area = "Lagos Island"
+            # Use AI to extract Lagos area from natural language
+            if self.ai_service:
+                try:
+                    lagos_area = await self.ai_service.extract_lagos_area(body_clean)
+                    if lagos_area:
+                        ai_used = True
+                except Exception as e:
+                    print(f"AI Lagos area extraction error: {e}")
 
             if not lagos_area:
                 return (
-                    "Please reply with *Mainland* or *Island* to continue.",
+                    "Please reply with *Mainland* or *Island* to continue.\n\n"
+                    "Or tell me a location (e.g., Lekki, Ikeja, VI, Yaba)",
                     "awaiting_lagos_area",
                     state_before,
                     "city_lagos",
@@ -2316,16 +2319,24 @@ Return ONLY the product name or SKU from the list above, nothing else. If you ca
                         "idle",
                         state_before,
                         "catalog_no_results",
-                        ai_used
+                        ai_used,
+                        []
                     )
                 else:
+                    # No products available for this city
+                    city_name = member.get('city', 'your area')
                     return (
-                        f"We're still building our catalog for {member.get('city', 'your area')}. "
-                        "Check back soon or contact support for specific products you need!",
+                        f"We're working on adding products for {city_name}. "
+                        "In the meantime, you can:\n\n"
+                        "• Contact support to request specific items\n"
+                        "• Type MENU to see other options\n"
+                        "• Share your referral link to earn rewards\n\n"
+                        "We'll have products available soon!",
                         "idle",
                         state_before,
                         "catalog_empty",
-                        ai_used
+                        ai_used,
+                        []
                     )
 
         # 5. General AI Chat / FAQ

@@ -83,36 +83,31 @@ class AIService:
                 {
                     "role": "system",
                     "content": (
-                        "You are an advanced intent classifier for PNP Lite, a WhatsApp grocery shopping bot. "
-                        "Analyze the user's message and return EXACTLY ONE intent token.\n\n"
-                        "Available intents:\n"
-                        "- catalog_search: IMPORTANT - This should be your DEFAULT for product-related queries. Use when:\n"
-                        "  * User mentions ANY food/grocery item (rice, oil, indomie, spaghetti, milk, bread, sugar, etc.)\n"
-                        "  * User asks what's available, list items, browse catalog, products\n"
-                        "  * User wants to see or find something to buy\n"
-                        "  * Single word that could be a product name (e.g., 'oil', 'rice', 'butter')\n"
-                        "  * ANY message that seems shopping-related\n"
-                        "- cart_checkout: wants to finalize purchase, pay, or checkout\n"
-                        "- cart_add: IMPORTANT - Use this when user wants to ADD a product to cart. This includes:\n"
-                        "  * User says 'add', 'add to cart', 'yes', 'ok', 'sure', 'proceed'\n"
-                        "  * User confirms they want to add the product\n"
-                        "  * User agrees to add something to their cart\n"
-                        "  * ANY affirmative response when a product was just shown\n"
-                        "- cart_remove: wants to remove/delete item from cart\n"
-                        "- cart_view: asks to see cart contents, 'my cart', 'show cart'\n"
-                        "- referral_link: wants their referral/invite link to share with friends\n"
-                        "- menu_help: Use this when the user is CONFUSED, asks for help, commands, usage instructions, or 'what can you do?'.\n"
-                        "- payment_confirmation: confirms payment, sent payment proof, or asking about payment status\n"
-                        "- order_help: questions about orders, delivery, tracking\n"
-                        "- cluster_create: wants to create a group/cluster/shared cart\n"
-                        "- cluster_join: wants to join a group/cluster\n"
-                        "- cluster_view: asks about their clusters, groups they're in\n"
-                        "- cluster_rename: wants to change cluster name\n"
-                        "- other: ONLY for greetings (hi, hello), thank you, or clear non-shopping chat. If the user seems lost, use 'menu_help' instead.\n\n"
+                        "You are an intent classifier for PNP Lite, a WhatsApp grocery shopping bot.\n"
+                        "Return EXACTLY ONE intent token.\n\n"
+                        "INTENTS:\n"
+                        "- catalog_search: DEFAULT for ANY product/shopping question. Use for:\n"
+                        "  * 'what products do you have?', 'what do you sell?', 'show me products'\n"
+                        "  * 'what's available?', 'list items', 'browse catalog'\n"
+                        "  * ANY food/grocery item: rice, oil, indomie, milk, bread, etc.\n"
+                        "  * Single words that could be products: 'oil', 'rice', 'butter'\n"
+                        "  * Questions about products: 'do you have rice?', 'how much is oil?'\n"
+                        "- cart_checkout: 'checkout', 'pay', 'finalize order', 'proceed to payment'\n"
+                        "- cart_add: 'add to cart', 'yes' (after product shown), 'add it', 'I want this'\n"
+                        "- cart_remove: 'remove', 'delete from cart', 'take out'\n"
+                        "- cart_view: 'my cart', 'show cart', 'what's in my cart'\n"
+                        "- referral_link: 'referral link', 'invite link', 'share link'\n"
+                        "- menu_help: 'help', 'menu', 'what can you do', 'commands', user seems confused\n"
+                        "- payment_confirmation: 'I paid', 'payment sent', payment proof, payment status\n"
+                        "- order_help: 'my order', 'delivery status', 'track order', 'where is my order'\n"
+                        "- cluster_create: 'create group', 'create cluster', 'start a group'\n"
+                        "- cluster_join: 'join group', 'join cluster'\n"
+                        "- cluster_view: 'my groups', 'my clusters'\n"
+                        "- cluster_rename: 'rename cluster', 'change group name'\n"
+                        "- other: ONLY for pure greetings (hi, hello) or thank you messages\n\n"
                         f"{context_str}\n"
-                        "When in doubt between catalog_search and other, choose catalog_search.\n"
-                        "If the user asks 'what do you have?' or 'what is this?', choose catalog_search (or menu_help if totally vague).\n"
-                        "Return ONLY the intent token, nothing else."
+                        "IMPORTANT: When in doubt, choose 'catalog_search'. Never return 'other' for product questions.\n"
+                        "Return ONLY the intent token."
                     ),
                 },
                 {"role": "user", "content": user_message},
@@ -294,154 +289,189 @@ class AIService:
 
     async def extract_name(self, user_message: str) -> Optional[str]:
         """
-        Ask the model to return only a probable name. It should strip prefixes like
-        "call me", "my name is", etc. Returns None on failure.
+        Extract just the person's name from conversational input.
+        Handles: "call me John", "my name is Sarah", "I'm Mike actually", "John please", etc.
         """
         try:
-            completion = await self.client.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "Extract only the person's name from the user's message. "
-                        "Do not include extra words. If unsure, return just the best guess name.",
-                    },
-                    {"role": "user", "content": user_message},
-                ],
-                max_tokens=10,
-                temperature=0.2,
-            )
-            name = completion.choices[0].message.content.strip()
-            # Safety: keep to a short token (no commas/newlines)
-            name = name.split("\n")[0].strip(",.! ")
-            return name
-        except Exception:
-            return None
-
-    async def extract_city(self, user_message: str, allowed: Optional[list[str]] = None) -> Optional[str]:
-        """
-        Extract city from natural language. Handles conversational input like:
-        - "I am in Abuja"
-        - "I'm from Port Harcourt"
-        - "Lagos"
-        - "I live in PH"
-
-        Returns: "PH", "Lagos", "Abuja", or None
-        Note: "Lagos" is returned as-is (not Mainland/Island) to trigger sub-selection.
-        """
-        try:
-            allowed_list = allowed or ["PH", "Lagos", "Abuja"]
             prompt = (
-                "You are a Nigerian city name extractor. Extract the city from the user's message.\n\n"
-                f"ALLOWED VALUES (return exactly one): {', '.join(allowed_list)}\n\n"
-                "IMPORTANT: The user may provide their city in a conversational way. Extract the city regardless of how they phrase it.\n\n"
-                "MAPPING RULES:\n"
-                "- 'Abuja', 'I am in Abuja', 'I'm from Abuja', 'I live in Abuja' → Output: 'Abuja'\n"
-                "- 'PH', 'Ph', 'ph', 'Port Harcourt', 'Harcourt', 'Portharcourt', 'I am in PH', 'I live in Port Harcourt' → Output: 'PH'\n"
-                "- 'Lagos', 'I am in Lagos', 'I'm from Lagos', 'Lagos Mainland', 'Lagos Island', 'Mainland', 'Island' → Output: 'Lagos'\n\n"
-                "OUTPUT FORMAT: Return ONLY 'PH', 'Lagos', or 'Abuja'. Nothing else.\n"
-                "If the input doesn't mention any of these cities, return empty string.\n\n"
+                "You are a name extractor. Extract ONLY the person's actual name from the message.\n\n"
+                "RULES:\n"
+                "- Remove ALL filler words: 'actually', 'please', 'thanks', 'just', 'simply', etc.\n"
+                "- Remove ALL prefixes: 'call me', 'my name is', 'I am', 'I'm', 'you can call me', 'it's', etc.\n"
+                "- Remove ALL suffixes: 'please', 'thanks', 'actually', 'though', etc.\n"
+                "- Return ONLY the name itself - nothing else\n"
+                "- If multiple names given, return just the first/primary name\n"
+                "- Capitalize properly (e.g., 'john' → 'John')\n\n"
                 "EXAMPLES:\n"
-                "Input: 'I am in Abuja' → Output: 'Abuja'\n"
-                "Input: 'I'm from Port Harcourt' → Output: 'PH'\n"
-                "Input: 'Lagos' → Output: 'Lagos'\n"
-                "Input: 'I live in PH' → Output: 'PH'\n"
-                "Input: 'Mainland' → Output: 'Lagos'\n"
-                "Input: 'Lagos Island' → Output: 'Lagos'\n"
-                "Input: 'hello' → Output: ''\n"
+                "Input: 'call me John actually' → Output: 'John'\n"
+                "Input: 'my name is Sarah please' → Output: 'Sarah'\n"
+                "Input: 'I'm Mike' → Output: 'Mike'\n"
+                "Input: 'You can call me Ada' → Output: 'Ada'\n"
+                "Input: 'John' → Output: 'John'\n"
+                "Input: 'its chioma' → Output: 'Chioma'\n"
+                "Input: 'Emeka is my name' → Output: 'Emeka'\n"
             )
             completion = await self.client.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=[
                     {"role": "system", "content": prompt},
-                    {"role": "user", "content": f"Extract city from: {user_message}"},
+                    {"role": "user", "content": f"Extract name from: {user_message}"},
                 ],
                 max_tokens=15,
                 temperature=0,
             )
-            city = completion.choices[0].message.content.strip()
-            # Remove any quotes, newlines, or extra formatting
-            city = city.replace('"', '').replace("'", '').split("\n")[0].strip(",.! ")
-
-            print(f"DEBUG: AI city extraction - Input: '{user_message}' → Raw output: '{completion.choices[0].message.content}' → Cleaned: '{city}'")
-
-            # Validate against allowed list (exact match)
-            if city and city in allowed_list:
-                return city
-
-            # Try case-insensitive match
-            city_lower = city.lower() if city else ""
-            for allowed_city in allowed_list:
-                if city_lower == allowed_city.lower():
-                    print(f"DEBUG: Matched via case-insensitive: '{city}' → '{allowed_city}'")
-                    return allowed_city
-
-            print(f"DEBUG: No match found for city: '{city}'")
-            return None
+            name = completion.choices[0].message.content.strip()
+            # Clean up any quotes or extra formatting
+            name = name.replace('"', '').replace("'", '').split("\n")[0].strip(",.! ")
+            print(f"DEBUG: AI name extraction - Input: '{user_message}' → Output: '{name}'")
+            return name if name else None
         except Exception as e:
-            print(f"AI city extraction error: {e}")
-            import traceback
-            traceback.print_exc()
+            print(f"AI name extraction error: {e}")
             return None
 
-    async def extract_membership(self, user_message: str) -> Optional[str]:
+    async def extract_city(self, user_message: str, allowed: Optional[list[str]] = None) -> Optional[str]:
         """
-        Normalize membership to one of: lifetime, monthly, onetime.
+        Extract city from natural language. Uses AI to understand any phrasing.
+        Returns: "PH", "Lagos", "Abuja", or None
         """
         try:
+            allowed_list = allowed or ["PH", "Lagos", "Abuja"]
             prompt = (
-                "You are a membership plan extractor. Extract the membership plan from the user's message.\n\n"
-                "ALLOWED VALUES (return exactly one): lifetime, monthly, onetime\n\n"
-                "MAPPING RULES:\n"
-                "- Input: 'Lifetime', 'Life', '50k', '50,000', '50000', '50', '₦50' → Output: 'lifetime'\n"
-                "- Input: 'Monthly', 'Month', '5k', '5,000', '5000', '5', '₦5' → Output: 'monthly'\n"
-                "- Input: 'One-time', 'Onetime', 'One time', '2k', '2,000', '2000', '2', '₦2' → Output: 'onetime'\n\n"
-                "OUTPUT FORMAT: Return ONLY the exact keyword: lifetime, monthly, or onetime. Nothing else.\n"
-                "If unclear, return an empty string.\n\n"
-                "EXAMPLES:\n"
-                "Input: 'Monthly' → Output: 'monthly'\n"
-                "Input: '5' → Output: 'monthly'\n"
-                "Input: '5k' → Output: 'monthly'\n"
-                "Input: 'Lifetime' → Output: 'lifetime'\n"
-                "Input: '50k' → Output: 'lifetime'\n"
-                "Input: 'Onetime' → Output: 'onetime'\n"
-                "Input: '2k' → Output: 'onetime'\n"
+                "You are a Nigerian city extractor. Your job is to identify which city the user is referring to.\n\n"
+                f"VALID OUTPUTS: {', '.join(allowed_list)}\n\n"
+                "UNDERSTAND CONTEXT: Users may say things like:\n"
+                "- Direct: 'Abuja', 'PH', 'Lagos'\n"
+                "- Conversational: 'I am in Abuja', 'I'm from PH', 'I live in Lagos'\n"
+                "- Partial: 'Lago', 'Abuj', 'Port Harcourt', 'Harcourt'\n"
+                "- Typos: 'Laogs', 'Abja', 'Port hacourt'\n"
+                "- Slang: 'Naija capital' (Abuja), 'garden city' (PH), 'eko' (Lagos)\n\n"
+                "MAPPING:\n"
+                "- Port Harcourt, PH, Ph, garden city, rivers → 'PH'\n"
+                "- Lagos, Lag, Eko, Mainland, Island, Lekki, VI, Ikeja → 'Lagos'\n"
+                "- Abuja, FCT, capital, Abj → 'Abuja'\n\n"
+                "OUTPUT: Return ONLY one of: PH, Lagos, Abuja\n"
+                "If you cannot determine the city, return empty string.\n"
             )
             completion = await self.client.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=[
                     {"role": "system", "content": prompt},
-                    {"role": "user", "content": f"Extract membership from: {user_message}"},
+                    {"role": "user", "content": user_message},
+                ],
+                max_tokens=10,
+                temperature=0,
+            )
+            city = completion.choices[0].message.content.strip()
+            city = city.replace('"', '').replace("'", '').split("\n")[0].strip(",.! ")
+
+            print(f"DEBUG: AI city extraction - Input: '{user_message}' → Output: '{city}'")
+
+            # Validate against allowed list
+            if city and city in allowed_list:
+                return city
+
+            # Case-insensitive match
+            city_lower = city.lower() if city else ""
+            for allowed_city in allowed_list:
+                if city_lower == allowed_city.lower():
+                    return allowed_city
+
+            return None
+        except Exception as e:
+            print(f"AI city extraction error: {e}")
+            return None
+
+    async def extract_membership(self, user_message: str) -> Optional[str]:
+        """
+        Extract membership plan from natural language using AI.
+        Returns: "lifetime", "monthly", or "onetime"
+        """
+        try:
+            prompt = (
+                "You are a membership plan extractor. Identify which subscription plan the user wants.\n\n"
+                "VALID OUTPUTS: lifetime, monthly, onetime\n\n"
+                "UNDERSTAND CONTEXT: Users may say things like:\n"
+                "- Direct: 'lifetime', 'monthly', 'one-time'\n"
+                "- Conversational: 'I want lifetime', 'give me monthly', 'the 50k one'\n"
+                "- Price-based: '50k', '5k', '2k', '50000', '5000', '2000'\n"
+                "- Partial: 'life', 'month', 'once', 'one time'\n"
+                "- Preference: 'the first one', 'the cheap one' (onetime), 'the expensive one' (lifetime)\n"
+                "- Nigerian style: 'the forever one' (lifetime), 'pay once' (could be lifetime or onetime based on context)\n\n"
+                "MAPPING:\n"
+                "- lifetime, life, 50k, 50000, 50, forever, permanent → 'lifetime'\n"
+                "- monthly, month, 5k, 5000, 5, per month, every month → 'monthly'\n"
+                "- onetime, one-time, one time, once, 2k, 2000, 2, single, trial → 'onetime'\n\n"
+                "OUTPUT: Return ONLY one of: lifetime, monthly, onetime\n"
+                "If you cannot determine the plan, return empty string.\n"
+            )
+            completion = await self.client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "system", "content": prompt},
+                    {"role": "user", "content": user_message},
                 ],
                 max_tokens=10,
                 temperature=0,
             )
             choice = completion.choices[0].message.content.strip()
-            # Remove any quotes, newlines, or extra formatting
             choice = choice.replace('"', '').replace("'", '').split("\n")[0].strip(",.! ").lower()
-            
-            print(f"DEBUG: AI membership extraction - Input: '{user_message}' → Raw output: '{completion.choices[0].message.content}' → Cleaned: '{choice}'")
-            
-            # Validate and return exact match
+
+            print(f"DEBUG: AI membership extraction - Input: '{user_message}' → Output: '{choice}'")
+
             if choice in ["lifetime", "monthly", "onetime"]:
                 return choice
-            
-            # Try partial matching for common variations (as fallback after AI)
-            if "life" in choice or "50" in choice:
-                print(f"DEBUG: Matched via partial: '{choice}' → 'lifetime'")
-                return "lifetime"
-            if "month" in choice or choice == "5":
-                print(f"DEBUG: Matched via partial: '{choice}' → 'monthly'")
-                return "monthly"
-            if "one" in choice or "once" in choice or choice == "2":
-                print(f"DEBUG: Matched via partial: '{choice}' → 'onetime'")
-                return "onetime"
-            
-            print(f"DEBUG: No match found for membership: '{choice}'")
+
             return None
         except Exception as e:
             print(f"AI membership extraction error: {e}")
-            import traceback
-            traceback.print_exc()
+            return None
+
+    async def extract_lagos_area(self, user_message: str) -> Optional[str]:
+        """
+        Extract Lagos area (Mainland or Island) from natural language.
+        Returns: "Lagos Mainland" or "Lagos Island"
+        """
+        try:
+            prompt = (
+                "You are determining if a user in Lagos is on the Mainland or Island.\n\n"
+                "VALID OUTPUTS: Lagos Mainland, Lagos Island\n\n"
+                "UNDERSTAND CONTEXT: Users may say:\n"
+                "- Direct: 'mainland', 'island', '1', '2'\n"
+                "- Locations: 'Lekki', 'VI', 'Victoria Island', 'Ikoyi' → Island\n"
+                "- Locations: 'Ikeja', 'Yaba', 'Surulere', 'Ogba', 'Maryland' → Mainland\n"
+                "- Conversational: 'I'm on the mainland', 'island side', 'I stay in Lekki'\n\n"
+                "MAPPING:\n"
+                "- mainland, main, ikeja, yaba, surulere, ogba, maryland, festac, oshodi → 'Lagos Mainland'\n"
+                "- island, vi, victoria island, ikoyi, lekki, ajah, banana island → 'Lagos Island'\n\n"
+                "OUTPUT: Return ONLY one of: Lagos Mainland, Lagos Island\n"
+                "If you cannot determine, return empty string.\n"
+            )
+            completion = await self.client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "system", "content": prompt},
+                    {"role": "user", "content": user_message},
+                ],
+                max_tokens=15,
+                temperature=0,
+            )
+            area = completion.choices[0].message.content.strip()
+            area = area.replace('"', '').replace("'", '').split("\n")[0].strip(",.! ")
+
+            print(f"DEBUG: AI Lagos area extraction - Input: '{user_message}' → Output: '{area}'")
+
+            if area in ["Lagos Mainland", "Lagos Island"]:
+                return area
+
+            # Normalize common variations
+            area_lower = area.lower()
+            if "mainland" in area_lower:
+                return "Lagos Mainland"
+            if "island" in area_lower:
+                return "Lagos Island"
+
+            return None
+        except Exception as e:
+            print(f"AI Lagos area extraction error: {e}")
             return None
 
