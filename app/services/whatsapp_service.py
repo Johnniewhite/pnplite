@@ -90,16 +90,37 @@ class WhatsAppService:
         return None
 
     def _normalize_media_url(self, url: Optional[str]) -> Optional[str]:
+        """
+        Normalize media URLs to be publicly accessible.
+        Handles: relative paths, localhost URLs, and ensures valid format.
+        Returns None if URL cannot be made valid.
+        """
         if not url:
-            return url
+            return None
+
+        url = url.strip()
+        if not url:
+            return None
+
         base = self._public_base_url()
-        if not base:
-            return url
+
+        # Handle relative paths (e.g., /uploads/image.jpg or uploads/image.jpg)
+        if not url.startswith(("http://", "https://")):
+            if not base:
+                return None  # Can't convert relative path without base URL
+            # Ensure path starts with /
+            path = url if url.startswith("/") else f"/{url}"
+            return f"{base}{path}"
+
+        # Handle localhost URLs
         parsed = urlparse(url)
-        if "localhost" in parsed.netloc or parsed.hostname in {"127.0.0.1"}:
+        if parsed.netloc and ("localhost" in parsed.netloc or parsed.hostname in {"127.0.0.1", "0.0.0.0"}):
+            if not base:
+                return None  # Can't convert localhost without base URL
             new_base = urlparse(base)
             parsed = parsed._replace(scheme=new_base.scheme, netloc=new_base.netloc)
             return urlunparse(parsed)
+
         return url
 
     def _city_key(self, value: Optional[str]) -> str:
@@ -198,7 +219,7 @@ class WhatsAppService:
         return "GEN"
 
     def _is_valid_media_url(self, url: Optional[str]) -> bool:
-        """Check if a URL is valid for Twilio media."""
+        """Check if a URL is valid for Twilio media (must be publicly accessible)."""
         if not url:
             return False
         url = url.strip()
@@ -207,13 +228,13 @@ class WhatsAppService:
         # Must be a proper HTTP/HTTPS URL
         if not url.startswith(("http://", "https://")):
             return False
-        # Must have a valid domain (not just http:// or https://)
         try:
             parsed = urlparse(url)
+            # Must have a valid domain
             if not parsed.netloc or len(parsed.netloc) < 4:
                 return False
-            # Check for common invalid patterns
-            if "localhost" in parsed.netloc and not self._public_base_url():
+            # Reject localhost/local IPs - Twilio can't access these
+            if "localhost" in parsed.netloc or parsed.hostname in {"127.0.0.1", "0.0.0.0"}:
                 return False
         except:
             return False
