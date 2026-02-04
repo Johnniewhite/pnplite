@@ -92,9 +92,11 @@ class WhatsAppService:
     def _normalize_media_url(self, url: Optional[str]) -> Optional[str]:
         """
         Normalize media URLs to be publicly accessible.
-        Handles: relative paths, localhost URLs, and ensures valid format.
+        Handles: relative paths, localhost URLs, spaces in filenames.
         Returns None if URL cannot be made valid.
         """
+        from urllib.parse import quote
+
         if not url:
             return None
 
@@ -110,6 +112,8 @@ class WhatsAppService:
                 return None  # Can't convert relative path without base URL
             # Ensure path starts with /
             path = url if url.startswith("/") else f"/{url}"
+            # URL-encode the path (handles spaces and special characters)
+            path = quote(path, safe="/:@")
             return f"{base}{path}"
 
         # Handle localhost URLs
@@ -119,9 +123,13 @@ class WhatsAppService:
                 return None  # Can't convert localhost without base URL
             new_base = urlparse(base)
             parsed = parsed._replace(scheme=new_base.scheme, netloc=new_base.netloc)
-            return urlunparse(parsed)
+            url = urlunparse(parsed)
 
-        return url
+        # URL-encode the path portion to handle spaces
+        parsed = urlparse(url)
+        encoded_path = quote(parsed.path, safe="/:@")
+        parsed = parsed._replace(path=encoded_path)
+        return urlunparse(parsed)
 
     def _city_key(self, value: Optional[str]) -> str:
         if not value:
