@@ -197,6 +197,28 @@ class WhatsAppService:
             return "PH"
         return "GEN"
 
+    def _is_valid_media_url(self, url: Optional[str]) -> bool:
+        """Check if a URL is valid for Twilio media."""
+        if not url:
+            return False
+        url = url.strip()
+        if not url:
+            return False
+        # Must be a proper HTTP/HTTPS URL
+        if not url.startswith(("http://", "https://")):
+            return False
+        # Must have a valid domain (not just http:// or https://)
+        try:
+            parsed = urlparse(url)
+            if not parsed.netloc or len(parsed.netloc) < 4:
+                return False
+            # Check for common invalid patterns
+            if "localhost" in parsed.netloc and not self._public_base_url():
+                return False
+        except:
+            return False
+        return True
+
     async def send_outbound(self, phone: str, body: str, media_url: Optional[str] = None) -> str:
         """
         Send a single WhatsApp message to a phone number (without status callback).
@@ -207,7 +229,8 @@ class WhatsAppService:
             "to": to_phone,
             "body": body,
         }
-        if media_url:
+        # Only include media_url if it's a valid URL
+        if media_url and self._is_valid_media_url(media_url):
             params["media_url"] = [media_url]
         cb = self._status_callback()
         if cb:
@@ -221,7 +244,7 @@ class WhatsAppService:
             intent="admin_send",
             state_before=None,
             state_after="idle",
-            media_url=media_url,
+            media_url=media_url if self._is_valid_media_url(media_url) else None,
         )
         return resp.sid
 
