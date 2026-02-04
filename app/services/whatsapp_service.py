@@ -243,6 +243,7 @@ class WhatsAppService:
     async def send_outbound(self, phone: str, body: str, media_url: Optional[str] = None) -> str:
         """
         Send a single WhatsApp message to a phone number (without status callback).
+        Falls back to text-only if media URL fails.
         """
         to_phone = phone if phone.startswith("whatsapp:") else f"whatsapp:{phone}"
         params = {
@@ -250,13 +251,24 @@ class WhatsAppService:
             "to": to_phone,
             "body": body,
         }
-        # Only include media_url if it's a valid URL
-        if media_url and self._is_valid_media_url(media_url):
-            params["media_url"] = [media_url]
         cb = self._status_callback()
         if cb:
             params["status_callback"] = cb
-        resp = self.twilio.messages.create(**params)
+
+        # Try with media first, fall back to text-only if it fails
+        if media_url and self._is_valid_media_url(media_url):
+            params["media_url"] = [media_url]
+            try:
+                resp = self.twilio.messages.create(**params)
+            except Exception as e:
+                print(f"WARNING: Media URL failed ({media_url}): {e}")
+                # Retry without media
+                del params["media_url"]
+                resp = self.twilio.messages.create(**params)
+                media_url = None  # Clear so we don't log it
+        else:
+            resp = self.twilio.messages.create(**params)
+            media_url = None
         # Log outbound
         await self.log_message(
             phone=phone.replace("whatsapp:", ""),
