@@ -92,22 +92,13 @@
                     "{:,.0f}".format(order.total) if order.total else '0' }}</span>
             </div>
             <div class="info-row">
-                <span class="label">Payment Receipt</span>
-                {% if order.payment_ref and order.payment_ref.startswith('http') %}
-                <span class="pill pill-success">Image Attached</span>
+                <span class="label">Payment Status</span>
+                {% if order.status == 'PAID' or order.status == 'paid' or order.status == 'CONFIRMED' or order.status == 'DISPATCHED' or order.status == 'DELIVERED' %}
+                <span class="pill pill-success">✓ Paid via Paystack</span>
                 {% else %}
-                <span class="text-muted font-mono">{{ order.payment_ref or 'Pending' }}</span>
+                <span class="pill pill-warning">Awaiting Payment</span>
                 {% endif %}
             </div>
-
-            {% if order.payment_ref and order.payment_ref.startswith('http') %}
-            <div class="mt-4">
-                <img src="{{ order.payment_ref }}" alt="Receipt"
-                    style="width: 100%; max-height: 200px; object-fit: cover; border-radius: 12px; border: var(--glass-border); cursor: pointer;"
-                    onclick="window.open(this.src, '_blank')">
-                <p class="text-xs text-muted mt-2 text-center italic">Click to view original document</p>
-            </div>
-            {% endif %}
         </div>
     </div>
 </div>
