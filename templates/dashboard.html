@@ -1,396 +1,245 @@
 {% extends "base.html" %}
 
 {% block content %}
-<div class="dashboard-header animate-slide-up">
+<div class="animate-slide-up">
+  <div class="dashboard-header">
     <div>
-        <h1 class="gradient-text">Overview</h1>
-        <p class="text-secondary">Welcome back, <strong>{{ admin }}</strong>. System is currently observing high
-            activity.</p>
+      <h1 class="gradient-text">Dashboard</h1>
+      <p>Welcome back, {{ admin }}</p>
     </div>
-    <div class="header-actions">
-        <div class="pulse-indicator">
-            <span class="pulse-dot"></span>
-            Real-time Monitoring
-        </div>
+    <div class="pulse-indicator">
+      <span class="pulse-dot"></span>
+      Live
     </div>
-</div>
+  </div>
 
-<div class="stats-grid">
+  <!-- Stats Grid -->
+  <div class="stats-grid">
     <div class="stat-glass-card primary">
-        <div class="stat-icon-wrapper">
-            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none"
-                stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
-                <circle cx="9" cy="7" r="4"></circle>
-            </svg>
+      <div class="stat-icon-wrapper">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/>
+          <circle cx="9" cy="7" r="4"/>
+        </svg>
+      </div>
+      <div class="stat-content">
+        <span class="stat-label">Members</span>
+        <div class="stat-value">{{ stats.members|comma }}</div>
+        <div class="stat-footer">
+          <span class="pill pill-success">{{ stats.paid_members }} active</span>
         </div>
-        <div class="stat-content">
-            <span class="stat-label">Total Members</span>
-            <div class="stat-value text-glow">{{ stats.members }}</div>
-            <div class="stat-footer">
-                <span class="pill pill-success">{{ stats.paid_members }} active subs</span>
-            </div>
-        </div>
+      </div>
     </div>
 
     <div class="stat-glass-card success">
-        <div class="stat-icon-wrapper">
-            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none"
-                stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
-                <polyline points="22 4 12 14.01 9 11.01"></polyline>
-            </svg>
+      <div class="stat-icon-wrapper">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M22 11.08V12a10 10 0 11-5.93-9.14"/>
+          <polyline points="22 4 12 14.01 9 11.01"/>
+        </svg>
+      </div>
+      <div class="stat-content">
+        <span class="stat-label">Fulfillment</span>
+        <div class="stat-value">94%</div>
+        <div class="stat-footer">
+          <span class="text-xs text-muted">All clusters</span>
         </div>
-        <div class="stat-content">
-            <span class="stat-label">Fulfillment Rate</span>
-            <div class="stat-value text-glow">94%</div>
-            <div class="stat-footer">
-                <span class="text-xs text-muted">Across all shared items</span>
-            </div>
-        </div>
+      </div>
     </div>
 
     <div class="stat-glass-card warning">
-        <div class="stat-icon-wrapper">
-            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none"
-                stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"></path>
-                <line x1="3" y1="6" x2="21" y2="6"></line>
-            </svg>
+      <div class="stat-icon-wrapper">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z"/>
+          <path d="M3 6h18"/>
+        </svg>
+      </div>
+      <div class="stat-content">
+        <span class="stat-label">Pending</span>
+        <div class="stat-value">{{ stats.pending_orders }}</div>
+        <div class="stat-footer">
+          <span class="pill pill-warning">Needs action</span>
         </div>
-        <div class="stat-content">
-            <span class="stat-label">Pending Orders</span>
-            <div class="stat-value text-glow">{{ stats.pending_orders }}</div>
-            <div class="stat-footer">
-                <span class="pill pill-warning">Awaiting Action</span>
-            </div>
-        </div>
+      </div>
     </div>
 
     <div class="stat-glass-card info">
-        <div class="stat-icon-wrapper">
-            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none"
-                stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
-            </svg>
+      <div class="stat-icon-wrapper">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/>
+        </svg>
+      </div>
+      <div class="stat-content">
+        <span class="stat-label">Messages 24h</span>
+        <div class="stat-value">{{ stats.msgs_24h|comma }}</div>
+        <div class="stat-footer">
+          <span class="text-xs text-muted">Conversations</span>
         </div>
-        <div class="stat-content">
-            <span class="stat-label">Messages (24h)</span>
-            <div class="stat-value text-glow">{{ stats.msgs_24h }}</div>
-            <div class="stat-footer">
-                <span class="text-xs text-muted">Active conversations</span>
-            </div>
-        </div>
+      </div>
     </div>
-</div>
+  </div>
 
-<div class="dashboard-grid">
+  <!-- Main Grid -->
+  <div class="dashboard-grid">
     <!-- Main Column -->
-    <div class="grid-main animate-fade-in" style="display: flex; flex-direction: column; gap: 2rem;">
-
-        <!-- Fulfillment Tracking Section -->
-        <div class="card" style="margin-bottom: 0;">
-            <div class="card-header">
-                <h2>Product Fulfillment Clusters</h2>
-                <div class="text-xs text-muted font-mono">Real-time group buying progress</div>
-            </div>
-
-            {% if product_clusters %}
-            <div class="fulfillment-grid">
-                {% for pc in product_clusters %}
-                <div class="fulfillment-card">
-                    <div class="flex items-center gap-4 mb-3">
-                        <div class="fc-img"
-                            style="background-image: url('{{ pc.image or 'https://placehold.co/100' }}')"></div>
-                        <div style="flex: 1;">
-                            <h4 class="m-0 text-sm font-bold">{{ pc.name }}</h4>
-                            <div class="flex justify-between text-xs text-muted mt-1">
-                                <span>{{ pc.city }} ({{ pc.area or 'All Areas' }})</span>
-                                <span class="font-mono text-accent">{{ pc.progress }}%</span>
-                            </div>
-                        </div>
-                    </div>
-                    <!-- Progress Bar -->
-                    <div class="progress-container">
-                        <div class="progress-bar" style="width: {{ pc.progress }}%;"></div>
-                    </div>
-                    <div class="flex justify-between mt-2 text-xs">
-                        <span class="text-secondary">{{ pc.current }} / {{ pc.target }} units ordered</span>
-                        {% if pc.progress >= 100 %}
-                        <span class="pill pill-success" style="font-size: 10px; padding: 2px 6px;">READY</span>
-                        {% endif %}
-                    </div>
-                </div>
-                {% endfor %}
-            </div>
-            {% else %}
-            <div class="empty-state-small">
-                <p>No active product clusters at this time.</p>
-            </div>
-            {% endif %}
+    <div class="grid-main">
+      <!-- Product Fulfillment -->
+      <div class="card">
+        <div class="card-header">
+          <h2>Fulfillment Progress</h2>
+          <span class="text-xs text-muted">{{ product_clusters|length }} active</span>
         </div>
 
-        <!-- User Groups Section -->
-        <div class="card" style="margin-bottom: 0;">
-            <div class="card-header">
-                <h2>Custom User Clusters</h2>
-                <a href="/ui/admin/chats" class="btn-text">View All &rarr;</a>
+        {% if product_clusters %}
+        <div class="fulfillment-grid">
+          {% for pc in product_clusters %}
+          <div class="fulfillment-card">
+            <div class="flex items-center gap-2 mb-2">
+              <div class="fc-img" style="background-image: url('{{ pc.image or '' }}')"></div>
+              <div style="flex: 1; min-width: 0;">
+                <div class="text-sm font-bold" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{ pc.name }}</div>
+                <div class="text-xs text-muted">{{ pc.city }}</div>
+              </div>
+              <div class="text-sm font-bold text-accent">{{ pc.progress }}%</div>
             </div>
-
-            {% if custom_clusters %}
-            <div class="cluster-premium-grid">
-                {% for cluster in custom_clusters %}
-                <a href="/ui/admin/clusters/{{ cluster._id }}" style="text-decoration: none; color: inherit;">
-                <div class="cluster-modern-card" style="cursor: pointer;">
-                    <div class="cluster-banner"></div>
-                    <div class="cluster-body">
-                        <div class="cluster-profile">
-                            <div class="cluster-avatar">{{ cluster.name[0] | upper }}</div>
-                            <div class="cluster-names">
-                                <h3>{{ cluster.name }}</h3>
-                                <span class="owner">Owned by {{ cluster.owner_name }}</span>
-                            </div>
-                        </div>
-                        <div class="cluster-metrics">
-                            <div class="metric">
-                                <span class="m-val">{{ cluster.member_count }}</span>
-                                <span class="m-lab">People</span>
-                            </div>
-                            <div class="metric">
-                                <span class="m-val">{{ cluster.item_count }}</span>
-                                <span class="m-lab">Items</span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                </a>
-                {% endfor %}
+            <div class="progress-container">
+              <div class="progress-bar" style="width: {{ pc.progress }}%;"></div>
             </div>
-            {% else %}
-            <div class="empty-placeholder">
-                <p>No custom user clusters found.</p>
+            <div class="flex justify-between mt-1">
+              <span class="text-xs text-muted">{{ pc.current }}/{{ pc.target }} units</span>
+              {% if pc.progress >= 100 %}
+              <span class="pill pill-success">Ready</span>
+              {% endif %}
             </div>
-            {% endif %}
+          </div>
+          {% endfor %}
         </div>
+        {% else %}
+        <div class="empty-state-small">No active product clusters</div>
+        {% endif %}
+      </div>
+
+      <!-- User Clusters -->
+      <div class="card">
+        <div class="card-header">
+          <h2>User Groups</h2>
+          <a href="/ui/admin/clusters" class="btn-text">View all</a>
+        </div>
+
+        {% if custom_clusters %}
+        <div class="cluster-premium-grid">
+          {% for cluster in custom_clusters %}
+          <a href="/ui/admin/clusters/{{ cluster._id }}" style="text-decoration: none;">
+            <div class="cluster-modern-card">
+              <div class="cluster-banner"></div>
+              <div class="cluster-body">
+                <div class="cluster-profile">
+                  <div class="cluster-avatar">{{ cluster.name[0]|upper }}</div>
+                  <div class="cluster-names">
+                    <h3>{{ cluster.name }}</h3>
+                    <span class="owner">{{ cluster.owner_name }}</span>
+                  </div>
+                </div>
+                <div class="cluster-metrics">
+                  <div class="metric">
+                    <span class="m-val">{{ cluster.member_count }}</span>
+                    <span class="m-lab">Members</span>
+                  </div>
+                  <div class="metric">
+                    <span class="m-val">{{ cluster.item_count }}</span>
+                    <span class="m-lab">Items</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </a>
+          {% endfor %}
+        </div>
+        {% else %}
+        <div class="empty-placeholder">No user groups yet</div>
+        {% endif %}
+      </div>
     </div>
 
     <!-- Side Column -->
-    <div class="grid-side animate-fade-in" style="display: flex; flex-direction: column; gap: 2rem;">
-
-        <!-- Activity/Notifications Feed -->
-        <div class="card"
-            style="flex: 1; min-height: 400px; display: flex; flex-direction: column; padding: 1.5rem 1rem;">
-            <h3 style="margin-bottom: 1.5rem; padding-left: 0.5rem; display: flex; align-items: center; gap: 0.75rem;">
-                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none"
-                    stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
-                    class="text-accent">
-                    <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
-                    <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
-                </svg>
-                Activity Feed
-            </h3>
-            <div class="notification-feed">
-                {% for n in notifications %}
-                <div class="notification-item">
-                    <div class="ni-icon n-type-{{ n.type }}">
-                        {% if n.type == 'payment' %}
-                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none"
-                            stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                            <rect x="1" y="4" width="22" height="16" rx="2" ry="2"></rect>
-                            <line x1="1" y1="10" x2="23" y2="10"></line>
-                        </svg>
-                        {% elif n.type == 'order' %}
-                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none"
-                            stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"></path>
-                            <line x1="3" y1="6" x2="21" y2="6"></line>
-                        </svg>
-                        {% elif n.type == 'member' %}
-                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none"
-                            stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
-                            <circle cx="12" cy="7" r="4"></circle>
-                        </svg>
-                        {% else %}
-                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none"
-                            stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                            <path
-                                d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z">
-                            </path>
-                            <line x1="12" y1="9" x2="12" y2="13"></line>
-                            <line x1="12" y1="17" x2="12.01" y2="17"></line>
-                        </svg>
-                        {% endif %}
-                    </div>
-                    <div class="ni-content">
-                        <div class="ni-msg">{{ n.message }}</div>
-                        <div class="ni-time">{{ n.ts | datetimeformat }}</div>
-                    </div>
-                </div>
-                {% else %}
-                <div class="empty-state-small" style="margin-top: 2rem;">
-                    <p>Waiting for system events...</p>
-                </div>
-                {% endfor %}
-            </div>
+    <div class="grid-side">
+      <!-- Activity Feed -->
+      <div class="card" style="flex: 1;">
+        <div class="card-header">
+          <h2>Activity</h2>
         </div>
 
-        <!-- Quick Actions -->
-        <div class="card">
-            <h3>Quick Actions</h3>
-            <div class="action-stack">
-                <a href="/ui/admin/catalogue" class="action-btn-modern">
-                    <div class="a-icon"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18"
-                            viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                            stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"></path>
-                            <line x1="3" y1="6" x2="21" y2="6"></line>
-                            <path d="M16 10a4 4 0 0 1-8 0"></path>
-                        </svg></div>
-                    <span>Inventory</span>
-                </a>
-                <a href="/ui/admin/broadcasts" class="action-btn-modern">
-                    <div class="a-icon"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18"
-                            viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                            stroke-linecap="round" stroke-linejoin="round">
-                            <path
-                                d="M11 5.882V19.24a1.76 1.76 0 0 1-3.417.592l-2.147-6.15M18 13a3 3 0 1 0 0-6M5.436 13.683A4.001 4.001 0 0 1 7 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 0 1-1.564-.317z">
-                            </path>
-                        </svg></div>
-                    <span>Broadcast</span>
-                </a>
+        <div class="notification-feed">
+          {% for n in notifications %}
+          <div class="notification-item">
+            <div class="ni-icon n-type-{{ n.type }}">
+              {% if n.type == 'payment' %}
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="1" y="4" width="22" height="16" rx="2"/>
+                <path d="M1 10h22"/>
+              </svg>
+              {% elif n.type == 'order' %}
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z"/>
+                <path d="M3 6h18"/>
+              </svg>
+              {% elif n.type == 'member' %}
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/>
+                <circle cx="12" cy="7" r="4"/>
+              </svg>
+              {% else %}
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="10"/>
+                <path d="M12 8v4M12 16h.01"/>
+              </svg>
+              {% endif %}
             </div>
+            <div class="ni-content">
+              <div class="ni-msg">{{ n.message }}</div>
+              <div class="ni-time">{{ n.ts|datetimeformat }}</div>
+            </div>
+          </div>
+          {% else %}
+          <div class="empty-state-small">No recent activity</div>
+          {% endfor %}
         </div>
+      </div>
+
+      <!-- Quick Actions -->
+      <div class="card">
+        <div class="card-header">
+          <h2>Quick Actions</h2>
+        </div>
+        <div class="action-stack">
+          <a href="/ui/admin/catalogue" class="action-btn-modern">
+            <div class="a-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4"/>
+              </svg>
+            </div>
+            <span>Manage Inventory</span>
+          </a>
+          <a href="/ui/admin/broadcasts" class="action-btn-modern">
+            <div class="a-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M22 2L11 13M22 2l-7 20-4-9-9-4z"/>
+              </svg>
+            </div>
+            <span>Send Broadcast</span>
+          </a>
+          <a href="/ui/admin/orders" class="action-btn-modern">
+            <div class="a-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"/>
+                <rect x="9" y="3" width="6" height="4" rx="1"/>
+              </svg>
+            </div>
+            <span>Review Orders</span>
+          </a>
+        </div>
+      </div>
     </div>
+  </div>
 </div>
-
-<style>
-    /* Dashboard Specific Polish */
-    .fulfillment-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-        gap: 1.25rem;
-    }
-
-    .fulfillment-card {
-        background: rgba(255, 255, 255, 0.03);
-        border: 1px solid rgba(255, 255, 255, 0.05);
-        border-radius: var(--radius-md);
-        padding: 1rem;
-        transition: all 0.2s ease;
-    }
-
-    .fulfillment-card:hover {
-        background: rgba(255, 255, 255, 0.05);
-        border-color: rgba(99, 102, 241, 0.2);
-    }
-
-    .fc-img {
-        width: 40px;
-        height: 40px;
-        border-radius: 8px;
-        background-size: cover;
-        background-position: center;
-        border: 1px solid rgba(255, 255, 255, 0.1);
-    }
-
-    .progress-container {
-        height: 6px;
-        background: rgba(255, 255, 255, 0.1);
-        border-radius: 3px;
-        overflow: hidden;
-    }
-
-    .progress-bar {
-        height: 100%;
-        background: var(--brand-gradient);
-        border-radius: 3px;
-        box-shadow: 0 0 10px rgba(79, 70, 229, 0.3);
-    }
-
-    .notification-feed {
-        display: flex;
-        flex-direction: column;
-        gap: 1rem;
-        max-height: 600px;
-        overflow-y: auto;
-        padding-right: 0.25rem;
-    }
-
-    .notification-item {
-        display: flex;
-        gap: 1rem;
-        padding: 0.75rem;
-        border-radius: 12px;
-        background: rgba(255, 255, 255, 0.02);
-        border: 1px solid rgba(255, 255, 255, 0.03);
-        align-items: center;
-        transition: transform 0.2s;
-    }
-
-    .notification-item:hover {
-        background: rgba(255, 255, 255, 0.04);
-    }
-
-    .ni-icon {
-        width: 32px;
-        height: 32px;
-        border-radius: 10px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        flex-shrink: 0;
-    }
-
-    .n-type-payment {
-        background: rgba(59, 130, 246, 0.15);
-        color: #3b82f6;
-    }
-
-    .n-type-order {
-        background: rgba(16, 185, 129, 0.15);
-        color: #10b981;
-    }
-
-    .n-type-member {
-        background: rgba(139, 92, 246, 0.15);
-        color: #8b5cf6;
-    }
-
-    .ni-content {
-        flex: 1;
-        min-width: 0;
-    }
-
-    .ni-msg {
-        font-size: 0.85rem;
-        font-weight: 600;
-        color: var(--text-primary);
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-    }
-
-    .ni-time {
-        font-size: 0.7rem;
-        color: var(--text-muted);
-        margin-top: 0.1rem;
-    }
-
-    .empty-state-small {
-        text-align: center;
-        color: var(--text-muted);
-        font-size: 0.8rem;
-        padding: 2rem 0;
-        font-style: italic;
-    }
-
-    .text-glow {
-        text-shadow: 0 0 10px rgba(255, 255, 255, 0.1);
-    }
-
-    .text-accent {
-        color: var(--accent-primary);
-    }
-</style>
 {% endblock %}

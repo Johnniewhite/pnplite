@@ -18,14 +18,6 @@ import asyncio
 
 
 class WhatsAppService:
-    # Content Template SIDs for WhatsApp buttons
-    CONTENT_SIDS = {
-        "add_to_cart": "HX624af982b4c1b8e300aa567a2f1f16e6",
-        "cart_actions": "HX537784f666f3a09e41ffb7aead2fecf4",
-        "cart_confirmation": "HXf228f027c53705a3913318f7a95a25f7",
-        "product_selection": "HX29817098467929f6250a368a64f3276e",
-    }
-    
     def __init__(self, db: AsyncIOMotorDatabase, settings: Settings, ai_service: Optional[AIService] = None):
         self.db = db
         self.settings = settings
@@ -109,48 +101,6 @@ class WhatsAppService:
             parsed = parsed._replace(scheme=new_base.scheme, netloc=new_base.netloc)
             return urlunparse(parsed)
         return url
-
-    def _get_content_sid_for_buttons(self, button_actions: List[Dict[str, str]]) -> Optional[str]:
-        """
-        Determine which Content Template to use based on button actions.
-        Returns the Content SID if a matching template is found.
-        """
-        if not button_actions:
-            return None
-        
-        # Extract button texts to identify the template
-        button_texts = [action.get("content", "").lower() for action in button_actions]
-        button_texts_str = " ".join(button_texts)
-        button_set = set(button_texts)
-        
-        # Match to template based on button combinations (exact matches first)
-        # Template: add_to_cart - "Add to Cart", "Checkout", "View Details"
-        if {"add to cart", "checkout", "view details"}.issubset(button_set):
-            return self.CONTENT_SIDS["add_to_cart"]
-        
-        # Template: cart_actions - "Checkout", "Add More", "Remove Item"
-        if {"checkout", "add more", "remove item"}.issubset(button_set):
-            return self.CONTENT_SIDS["cart_actions"]
-        
-        # Template: cart_confirmation - "View Cart", "Checkout", "Continue Shopping"
-        if {"view cart", "checkout", "continue shopping"}.issubset(button_set):
-            return self.CONTENT_SIDS["cart_confirmation"]
-        
-        # Template: product_selection - "Add First", "View Cart", "Search More"
-        if {"add first", "view cart", "search more"}.issubset(button_set):
-            return self.CONTENT_SIDS["product_selection"]
-        
-        # Fallback: match by key buttons
-        if "add to cart" in button_texts_str and "view details" in button_texts_str:
-            return self.CONTENT_SIDS["add_to_cart"]
-        elif "add more" in button_texts_str and "remove item" in button_texts_str:
-            return self.CONTENT_SIDS["cart_actions"]
-        elif "continue shopping" in button_texts_str:
-            return self.CONTENT_SIDS["cart_confirmation"]
-        elif "add first" in button_texts_str and "search more" in button_texts_str:
-            return self.CONTENT_SIDS["product_selection"]
-        
-        return None
 
     def _city_key(self, value: Optional[str]) -> str:
         if not value:
@@ -288,34 +238,6 @@ class WhatsAppService:
              "What would you like to do?"
         )
         await self.send_outbound(phone, menu)
-
-    async def send_content_template(self, phone: str, content_sid: str, content_variables: Optional[Dict[str, str]] = None) -> str:
-        """
-        Send a WhatsApp Content Template with buttons via REST API.
-        """
-        to_phone = phone if phone.startswith("whatsapp:") else f"whatsapp:{phone}"
-        params = {
-            "from_": self.settings.twilio_from_number,
-            "to": to_phone,
-            "content_sid": content_sid,
-        }
-        if content_variables:
-            import json
-            params["content_variables"] = json.dumps(content_variables)
-        cb = self._status_callback()
-        if cb:
-            params["status_callback"] = cb
-        resp = self.twilio.messages.create(**params)
-        # Log outbound
-        await self.log_message(
-            phone=phone.replace("whatsapp:", ""),
-            direction=MessageDirection.outbound,
-            body=f"[Content Template: {content_sid}]",
-            intent="template_send",
-            state_before=None,
-            state_after="idle",
-        )
-        return resp.sid
 
     async def send_catalog_cards(self, phone: str, products: List[dict], limit: int = 3):
         """
@@ -507,15 +429,17 @@ class WhatsAppService:
             }
 
         products = await self.db.products.find(criteria).sort("name", 1).to_list(length=50)
-        
-        # Filter products by city visibility - only show products that match user's city
-        # If product has no city clusters configured, show to everyone
-        # If product has city clusters configured, only show if user's city matches
+
+        # Filter products by city visibility and ensure they have valid names
+        # Only show products that match user's city and have a name
         filtered_products = []
         for p in products:
+            # Skip products without names
+            if not p.get("name"):
+                continue
             if self._product_visible_for_city(p, member_city):
                 filtered_products.append(p)
-        
+
         return filtered_products
     
     async def get_product_categories(self) -> Dict[str, List[Dict[str, Any]]]:
@@ -1525,7 +1449,7 @@ class WhatsAppService:
                         "has_multiple_products": len(recent_products) > 1
                     }
                     if recent_products:
-                        cart_context["available_products"] = [p.get("name", "") for p in recent_products[:5]]
+                        cart_context["available_products"] = [p.get("name") for p in recent_products[:5] if p.get("name")]
                     
                     # PRIORITY: Check for Reply Context (Manual Reply to a specific product message)
                     if context_id:
@@ -1562,10 +1486,12 @@ class WhatsAppService:
                             simple_add_commands = ["add", "yes", "y", "ok", "okay", "sure", "proceed", "add to cart"]
                             if user_lower in simple_add_commands:
                                 # User didn't specify - ask them to clarify
-                                product_names = [p.get("name", "") for p in recent_products[:5]]
-                                product_list = "\n".join([f"• {name}" for name in product_names])
+                                product_names = [p.get("name", "Unknown Product") for p in recent_products[:5] if p.get("name")]
+                                if not product_names:
+                                    product_names = [f"Product {i+1} (SKU: {p.get('sku', 'N/A')})" for i, p in enumerate(recent_products[:5])]
+                                product_list = "\n".join([f"• {name}" for name in product_names if name])
                                 return (
-                                    f"I see multiple products. Which one would you like to add?\n\n{product_list}\n\nPlease specify (e.g., 'Reply to the image' or type 'Big Bull').",
+                                    f"Which product would you like to add?\n\n{product_list}\n\nPlease reply with the product name.",
                                     "awaiting_cart_action",
                                     state_before,
                                     "cart_add_clarify",
@@ -1577,8 +1503,9 @@ class WhatsAppService:
                             if self.ai_service:
                                 try:
                                     # Use AI to extract product name from user message
-                                    # Build context with available products
-                                    products_list = "\n".join([f"- {p.get('name', '')} (SKU: {p.get('sku', '')})" for p in recent_products])
+                                    # Build context with available products (filter out empty names)
+                                    valid_products = [p for p in recent_products if p.get("name")]
+                                    products_list = "\n".join([f"- {p.get('name')} (SKU: {p.get('sku', 'N/A')})" for p in valid_products])
                                     ai_prompt = f"""The user wants to add a product to their cart. They said: "{body_clean}"
 
 Available products:
@@ -2240,23 +2167,37 @@ Return ONLY the product name or SKU from the list above, nothing else. If you ca
                 # Send individual product cards with buttons
                 limit = 5
                 
-                # Store products for context
+                # Store products for context (only products with valid names)
+                valid_results = [p for p in results[:10] if p.get("name")]
                 await self.upsert_member_state(phone, {
-                    "state": "awaiting_cart_action", 
-                    "last_product": results[0] if results else None,
-                    "recent_products": [{"name": p.get("name"), "sku": p.get("sku"), "price": p.get("price")} for p in results[:10]]
+                    "state": "awaiting_cart_action",
+                    "last_product": valid_results[0] if valid_results else None,
+                    "recent_products": [{"name": p["name"], "sku": p.get("sku", ""), "price": p.get("price", 0)} for p in valid_results]
                 })
 
-                for p in results[:limit]:
+                # Only show products with valid names
+                display_products = [p for p in results[:limit] if p.get("name")]
+
+                if not display_products:
+                    return (
+                        "Sorry, no products are currently available. Please try again later or contact support.",
+                        "idle",
+                        state_before,
+                        "no_products",
+                        False,
+                        []
+                    )
+
+                for p in display_products:
                     base_price = p.get("price", 0)
                     try:
                         base_price_val = float(str(base_price).replace(",", "").replace("₦", "").strip())
                     except:
                         base_price_val = 0
-                    
+
                     price_display = f"₦{base_price_val:,.0f}"
                     sku = p.get("sku", "")
-                    
+
                     # 1. Send Product Details first (Image + Text)
                     # This ensures the user sees the product info even if the template doesn't support variables
                     caption = f"{p['name']} • {price_display}\nSKU: {sku}"

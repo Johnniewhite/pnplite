@@ -1,245 +1,167 @@
 {% extends "base.html" %}
 
 {% block content %}
-<div class="dashboard-header animate-slide-up">
-  <div>
-    <h1 class="gradient-text">Catalogue</h1>
-    <p class="text-secondary">Manage your inventory, prices, and cluster availability.</p>
-  </div>
-  <div class="header-actions">
-    <div class="search-wrapper">
-      <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none"
-        stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <circle cx="11" cy="11" r="8"></circle>
-        <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-      </svg>
-      <input type="text" id="catalogueSearch" placeholder="Search products..." class="form-input"
-        style="padding-left: 2.75rem; border-radius: 99px;">
+<div class="animate-slide-up">
+  <div class="dashboard-header">
+    <div>
+      <h1 class="gradient-text">Catalogue</h1>
+      <p>{{ products|length }} products</p>
     </div>
-    <button class="btn btn-primary" onclick="openDrawer()">
-      <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none"
-        stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-        <line x1="12" y1="5" x2="12" y2="19"></line>
-        <line x1="5" y1="12" x2="19" y2="12"></line>
-      </svg>
-      Add Product
-    </button>
-  </div>
-</div>
-
-{% if msg %}
-<div class="alert alert-success animate-slide-up" style="margin-bottom: 2rem;">
-  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-    stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
-    <polyline points="22 4 12 14.01 9 11.01"></polyline>
-  </svg>
-  {{ msg }}
-</div>
-{% endif %}
-
-<div class="catalogue-grid-premium" id="productGrid">
-  {% for p in products %}
-  <div class="product-card-premium animate-fade-in" data-search="{{ p.name }} {{ p.sku }}">
-    <div class="card-image-premium" {% if p.image_url %}style="background-image: url('{{ p.image_url }}')" {% endif %}>
-      {% if not p.image_url %}
-      <div class="empty-placeholder" style="height: 100%; border-radius: 0;">
-        <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none"
-          stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-          <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
-          <circle cx="8.5" cy="8.5" r="1.5"></circle>
-          <polyline points="21 15 16 10 5 21"></polyline>
+    <div class="flex items-center gap-2">
+      <div style="position: relative;">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"
+          style="position: absolute; left: 0.75rem; top: 50%; transform: translateY(-50%); opacity: 0.5;">
+          <circle cx="11" cy="11" r="8"/>
+          <path d="M21 21l-4.35-4.35"/>
         </svg>
+        <input type="text" id="catalogueSearch" placeholder="Search..."
+          style="padding-left: 2.25rem; width: 180px; margin: 0;">
       </div>
-      {% endif %}
-      <div class="card-overlay-badges">
-        {% if p.in_stock %}
-        <span class="pill pill-success">In Stock</span>
-        {% else %}
-        <span class="pill pill-danger">Out of Stock</span>
-        {% endif %}
-      </div>
-    </div>
-
-    <div class="card-details-premium">
-      <h3 class="product-name-premium">{{ p.name }}</h3>
-      <div class="product-sku-pill">{{ p.sku }}</div>
-
-      {% if p.clusters %}
-      <div class="cluster-list" style="margin-top: 1rem;">
-        {% for c in p.clusters %}
-        <span class="pill pill-info" style="font-size: 0.7rem; padding: 0.2rem 0.5rem;">
-          {{ c.city }}{% if c.area %} - {{ c.area }}{% endif %}
-        </span>
-        {% endfor %}
-      </div>
-      {% endif %}
-
-      <div class="price-row-premium" style="display: flex; flex-direction: column; align-items: flex-start;">
-        <div class="price-premium">₦{{ p.price }} <span style="font-size: 0.7em; opacity: 0.7;">/ slot</span></div>
-        {% if p.clusters and p.clusters[0].units_per_cluster %}
-          {% set total = (p.price | float * p.clusters[0].units_per_cluster) %}
-          <div style="font-size: 0.8rem; opacity: 0.8;">Total: ₦{{ "{:,.2f}".format(total) }}</div>
-        {% endif %}
-      </div>
-    </div>
-
-    <div class="card-footer-premium">
-      <button class="btn btn-secondary" style="flex: 1;" onclick='openDrawer({{ p | tojson | forceescape | safe }})'>
-        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
-          stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
-          <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+      <button class="btn btn-primary" onclick="openDrawer()">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M12 5v14M5 12h14"/>
         </svg>
-        Edit
+        Add
       </button>
-      <form method="post" action="/ui/admin/catalogue/delete" onsubmit="return confirm('Delete this product?');"
-        style="flex: 1;">
-        <input type="hidden" name="sku" value="{{ p.sku }}">
-        <button type="submit" class="btn btn-danger" style="width: 100%;">
-          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
-            stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <polyline points="3 6 5 6 21 6"></polyline>
-            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-          </svg>
-          Delete
-        </button>
-      </form>
     </div>
   </div>
-  {% endfor %}
 
-  {% if not products %}
-  <div class="empty-placeholder" style="grid-column: 1 / -1; min-height: 300px;">
-    <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-      stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-      <circle cx="12" cy="12" r="10"></circle>
-      <line x1="12" y1="8" x2="12" y2="12"></line>
-      <line x1="12" y1="16" x2="12.01" y2="16"></line>
-    </svg>
-    <h3>No products yet</h3>
-    <p>Start your collection by adding a new product.</p>
+  {% if msg %}
+  <div class="card" style="background: var(--success-bg); border-color: var(--success); margin-bottom: 1rem;">
+    <p class="text-sm" style="color: var(--success); margin: 0;">{{ msg }}</p>
   </div>
   {% endif %}
+
+  <div class="catalogue-grid-premium" id="productGrid">
+    {% for p in products %}
+    <div class="product-card-premium" data-search="{{ p.name }} {{ p.sku }}">
+      <div class="card-image-premium" style="position: relative; {% if p.image_url %}background-image: url('{{ p.image_url }}'){% endif %}">
+        {% if not p.image_url %}
+        <div style="height: 100%; display: flex; align-items: center; justify-content: center; background: var(--bg-elevated);">
+          <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="currentColor" stroke-width="1" style="opacity: 0.3;">
+            <rect x="3" y="3" width="18" height="18" rx="2"/>
+            <circle cx="8.5" cy="8.5" r="1.5"/>
+            <path d="M21 15l-5-5L5 21"/>
+          </svg>
+        </div>
+        {% endif %}
+        <div class="card-overlay-badges">
+          {% if p.in_stock %}
+          <span class="pill pill-success">In Stock</span>
+          {% else %}
+          <span class="pill pill-danger">Out</span>
+          {% endif %}
+        </div>
+      </div>
+
+      <div class="card-details-premium">
+        <h3 class="product-name-premium">{{ p.name }}</h3>
+        <span class="product-sku-pill">{{ p.sku }}</span>
+
+        {% if p.clusters %}
+        <div style="margin-top: 0.5rem; display: flex; flex-wrap: wrap; gap: 0.25rem;">
+          {% for c in p.clusters %}
+          <span class="pill pill-neutral" style="font-size: 0.5625rem;">{{ c.city }}</span>
+          {% endfor %}
+        </div>
+        {% endif %}
+
+        <div class="price-row-premium">
+          <span class="price-premium">₦{{ p.price }}</span>
+        </div>
+      </div>
+
+      <div class="card-footer-premium">
+        <button class="btn btn-secondary" style="flex: 1; padding: 0.375rem;" onclick='openDrawer({{ p | tojson | forceescape | safe }})'>
+          Edit
+        </button>
+        <form method="post" action="/ui/admin/catalogue/delete" onsubmit="return confirm('Delete?');" style="flex: 1;">
+          <input type="hidden" name="sku" value="{{ p.sku }}">
+          <button type="submit" class="btn btn-danger" style="width: 100%; padding: 0.375rem;">Delete</button>
+        </form>
+      </div>
+    </div>
+    {% endfor %}
+
+    {% if not products %}
+    <div class="empty-placeholder" style="grid-column: 1 / -1;">
+      <p>No products yet. Click "Add" to get started.</p>
+    </div>
+    {% endif %}
+  </div>
 </div>
 
-<!-- Drawer Component -->
+<!-- Drawer -->
 <div class="drawer-overlay" id="productDrawer">
   <div class="drawer-panel">
     <form id="productForm" method="post" action="/ui/admin/catalogue" enctype="multipart/form-data"
       style="height: 100%; display: flex; flex-direction: column;">
       <div class="drawer-header">
-        <div>
-          <h2 id="drawerTitle" style="margin: 0; font-size: 1.5rem;" class="gradient-text">Add Product</h2>
-          <p class="text-xs text-muted mt-1">Fill in the details to update your store inventory.</p>
-        </div>
-        <button type="button" class="btn-icon" onclick="closeDrawer()"
-          style="background: rgba(255,255,255,0.05); border-radius: 50%; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; color: var(--text-muted);">
-          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none"
-            stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-            <line x1="18" y1="6" x2="6" y2="18"></line>
-            <line x1="6" y1="6" x2="18" y2="18"></line>
-          </svg>
-        </button>
+        <h2 id="drawerTitle" class="gradient-text" style="margin: 0;">Add Product</h2>
+        <button type="button" class="modal-close" onclick="closeDrawer()">&times;</button>
       </div>
 
-      <div class="drawer-body">
-        <!-- Basic Info Section -->
+      <div class="drawer-body" style="display: flex; flex-direction: column; gap: 1rem;">
+        <!-- Basic Info -->
         <div class="form-section">
-          <h4 class="text-xs text-muted uppercase tracking-widest mb-4">Basic Information</h4>
-          <div class="form-group mb-4">
-            <label class="form-label text-sm font-bold mb-2 block">Product Name</label>
-            <input type="text" name="name" id="pName" class="form-input mb-0" placeholder="e.g. Premium Rice 50kg"
-              required>
+          <h4>Basic Information</h4>
+          <div class="form-group">
+            <label>Product Name</label>
+            <input type="text" name="name" id="pName" placeholder="e.g. Premium Rice 50kg" required style="margin: 0;">
           </div>
-
-          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
-            <div class="form-group">
-              <label class="form-label text-sm font-bold mb-2 block">SKU</label>
-              <input type="text" name="sku" id="pSku" class="form-input mb-0" placeholder="e.g. RICE-P50" required>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;">
+            <div class="form-group" style="margin: 0;">
+              <label>SKU</label>
+              <input type="text" name="sku" id="pSku" placeholder="RICE-50" required style="margin: 0;">
             </div>
-            <div class="form-group">
-              <label class="form-label text-sm font-bold mb-2 block">Price (₦)</label>
-              <input type="text" name="price" id="pPrice" class="form-input currency-input mb-0" placeholder="0.00"
-                required>
+            <div class="form-group" style="margin: 0;">
+              <label>Price (₦)</label>
+              <input type="text" name="price" id="pPrice" placeholder="0.00" required style="margin: 0;">
             </div>
           </div>
         </div>
 
-        <!-- Stock & Media Section -->
+        <!-- Stock & Image -->
         <div class="form-section">
-          <h4 class="text-xs text-muted uppercase tracking-widest mb-4">Availability & Media</h4>
-
-          <div class="form-group mb-4">
-            <label class="form-label text-sm font-bold mb-2 block">Stock Availability</label>
-            <label class="form-checkbox-label" style="display: flex; align-items: center; cursor: pointer;">
-              <input type="checkbox" name="in_stock" id="pStock" class="form-checkbox" value="true" checked style="width: auto; margin-right: 0.75rem;">
-              <span style="display: flex; align-items: center;">
-                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none"
-                  stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"
-                  style="margin-right: 0.5rem;">
-                  <polyline points="20 6 9 17 4 12"></polyline>
-                </svg>
-                In Stock
-              </span>
-            </label>
-            <p class="text-xs text-muted mt-2">Toggle to mark product as out of stock</p>
-          </div>
-
+          <h4>Stock & Media</h4>
           <div class="form-group">
-            <label class="form-label text-sm font-bold mb-2 block">Product Image</label>
-            <label class="file-upload-label" id="fileUploadLabel" 
-              style="border: 2px dashed rgba(255,255,255,0.2); border-radius: 8px; padding: 2rem; text-align: center; cursor: pointer; transition: all 0.3s;">
-              <div id="imagePlaceholder" style="display: flex; flex-direction: column; align-items: center;">
-                <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none"
-                  stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"
-                  style="margin-bottom: 0.5rem; opacity: 0.5;">
-                  <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
-                  <circle cx="8.5" cy="8.5" r="1.5"></circle>
-                  <polyline points="21 15 16 10 5 21"></polyline>
-                </svg>
-                <span class="text-sm">Click to upload or drag image here</span>
-              </div>
-              <div id="imagePreview"
-                style="display: none; width: 100%; height: 160px; border-radius: 8px; background-size: cover; background-position: center;">
-              </div>
-              <input type="file" name="image_file" id="pImage" accept="image/*" style="display: none;"
-                onchange="previewFile(event)">
+            <label class="form-checkbox-label" style="padding: 0;">
+              <input type="checkbox" name="in_stock" id="pStock" value="true" checked style="width: auto; margin-right: 0.5rem;">
+              In Stock
             </label>
+          </div>
+          <div class="form-group" style="margin: 0;">
+            <label>Product Image</label>
+            <div class="file-upload-label" id="fileUploadLabel" style="position: relative;">
+              <div id="imagePlaceholder">
+                <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" style="opacity: 0.5; margin-bottom: 0.25rem;">
+                  <rect x="3" y="3" width="18" height="18" rx="2"/>
+                  <circle cx="8.5" cy="8.5" r="1.5"/>
+                  <path d="M21 15l-5-5L5 21"/>
+                </svg>
+                <span>Upload image</span>
+              </div>
+              <div id="imagePreview" style="display: none; width: 100%; height: 100px; background-size: cover; background-position: center; border-radius: var(--radius-sm);"></div>
+              <input type="file" name="image_file" id="pImage" accept="image/*" style="display: none;" onchange="previewFile(event)">
+            </div>
             <input type="hidden" name="image_url" id="pImageUrl">
           </div>
         </div>
 
-        <!-- Clusters Section -->
+        <!-- Clusters -->
         <div class="form-section">
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
-            <h4 class="text-xs text-muted uppercase tracking-widest m-0">Cluster Availability</h4>
-            <button type="button" class="btn btn-secondary btn-sm" onclick="addClusterRow()"
-              style="padding: 0.4rem 0.8rem; font-size: 0.75rem;">
-              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none"
-                stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                <line x1="12" y1="5" x2="12" y2="19"></line>
-                <line x1="5" y1="12" x2="19" y2="12"></line>
-              </svg>
-              Add Location
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
+            <h4 style="margin: 0;">Locations</h4>
+            <button type="button" class="btn btn-secondary" style="padding: 0.25rem 0.5rem; font-size: 0.6875rem;" onclick="addClusterRow()">
+              + Add
             </button>
           </div>
-          <div id="clusterContainer" class="cluster-rows-container">
-            <!-- Cluster Rows injected here -->
-          </div>
+          <div id="clusterContainer" class="cluster-rows-container"></div>
         </div>
       </div>
 
       <div class="drawer-footer">
-        <button type="submit" class="btn btn-primary" style="width: 100%; padding: 1rem; font-size: 1rem;">
-          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none"
-            stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path>
-            <polyline points="17 21 17 13 7 13 7 21"></polyline>
-            <polyline points="7 3 7 8 15 8"></polyline>
-          </svg>
-          Save Product Changes
-        </button>
+        <button type="submit" class="btn btn-primary" style="width: 100%;">Save Product</button>
       </div>
     </form>
   </div>
@@ -260,7 +182,6 @@
   const clusterContainer = document.getElementById('clusterContainer');
   const searchInput = document.getElementById('catalogueSearch');
 
-  // Search logic
   if (searchInput) {
     searchInput.addEventListener('input', (e) => {
       const term = e.target.value.toLowerCase().trim();
@@ -271,105 +192,33 @@
     });
   }
 
-  // Improved Currency Formatting
-  const currencyInputs = document.querySelectorAll('.currency-input');
-  currencyInputs.forEach(input => {
-    input.addEventListener('input', (e) => {
-      let value = e.target.value.replace(/[^0-9.]/g, '');
-      if (value) {
-        const parts = value.split('.');
-        parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-        if (parts.length > 2) parts.pop(); // Only one decimal point
-        e.target.value = parts.join('.');
-      }
-    });
-
-    // Auto-fix on blur
-    input.addEventListener('blur', (e) => {
-      if (e.target.value && !e.target.value.includes('.')) {
-        e.target.value = e.target.value + '.00';
-      }
-    });
-  });
-
-  // Click to upload
   document.getElementById('fileUploadLabel').addEventListener('click', function(e) {
     if (e.target.tagName !== 'INPUT') {
       document.getElementById('pImage').click();
     }
   });
 
-  // Drag and drop handlers
-  const fileUploadLabel = document.getElementById('fileUploadLabel');
-  ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
-    fileUploadLabel.addEventListener(eventName, preventDefaults, false);
-    document.body.addEventListener(eventName, preventDefaults, false);
-  });
-
-  function preventDefaults(e) {
-    e.preventDefault();
-    e.stopPropagation();
-  }
-
-  ['dragenter', 'dragover'].forEach(eventName => {
-    fileUploadLabel.addEventListener(eventName, () => {
-      fileUploadLabel.style.borderColor = 'rgba(99, 102, 241, 0.5)';
-      fileUploadLabel.style.background = 'rgba(99, 102, 241, 0.05)';
-    }, false);
-  });
-
-  ['dragleave', 'drop'].forEach(eventName => {
-    fileUploadLabel.addEventListener(eventName, () => {
-      fileUploadLabel.style.borderColor = 'rgba(255,255,255,0.2)';
-      fileUploadLabel.style.background = 'transparent';
-    }, false);
-  });
-
-  fileUploadLabel.addEventListener('drop', handleDrop, false);
-
-  function handleDrop(e) {
-    const dt = e.dataTransfer;
-    const files = dt.files;
-    if (files.length > 0) {
-      document.getElementById('pImage').files = files;
-      previewFile({ target: { files: files } });
-    }
-  }
-
   function previewFile(event) {
     const preview = document.getElementById('imagePreview');
     const placeholder = document.getElementById('imagePlaceholder');
-    const file = event ? event.target.files[0] : document.getElementById('pImage').files[0];
+    const file = event ? event.target.files[0] : null;
+    if (!file) return;
     const reader = new FileReader();
-
-    reader.onloadend = function () {
+    reader.onloadend = function() {
       preview.style.backgroundImage = `url(${reader.result})`;
       preview.style.display = 'block';
       placeholder.style.display = 'none';
     }
-
-    if (file) {
-      reader.readAsDataURL(file);
-    } else {
-      preview.style.backgroundImage = null;
-      preview.style.display = 'none';
-      placeholder.style.display = 'flex';
-    }
+    reader.readAsDataURL(file);
   }
 
   function openDrawer(productData = null) {
     let product = productData;
     if (typeof productData === 'string') {
-      try {
-        product = JSON.parse(productData);
-      } catch (e) {
-        console.error("Failed to parse product data", e);
-      }
+      try { product = JSON.parse(productData); } catch(e) {}
     }
 
     clusterContainer.innerHTML = '';
-    // Reset Image Preview
-    imagePreview.style.backgroundImage = null;
     imagePreview.style.display = 'none';
     imagePlaceholder.style.display = 'flex';
     document.getElementById('pImage').value = '';
@@ -378,7 +227,7 @@
       drawerTitle.textContent = 'Edit Product';
       pName.value = product.name || '';
       pSku.value = product.sku || '';
-      pPrice.value = (product.price || '').toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+      pPrice.value = product.price || '';
       pStock.checked = product.in_stock !== false;
       pImageUrl.value = product.image_url || '';
 
@@ -394,7 +243,7 @@
         addClusterRow();
       }
     } else {
-      drawerTitle.textContent = 'New Product';
+      drawerTitle.textContent = 'Add Product';
       pName.value = '';
       pSku.value = '';
       pPrice.value = '';
@@ -418,67 +267,43 @@
     const div = document.createElement('div');
     div.className = 'cluster-card';
     div.id = rowId;
-
     div.innerHTML = `
       <div class="cluster-card-header">
-        <div class="cluster-card-title">
-            <div class="cluster-icon-box">
-                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg>
-            </div>
-            <span>Location Configuration</span>
-        </div>
-        <button type="button" class="cluster-delete-btn-premium" onclick="document.getElementById('${rowId}').remove()" title="Remove Location">
-          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+        <span class="cluster-card-title">Location</span>
+        <button type="button" class="cluster-delete-btn-premium" onclick="document.getElementById('${rowId}').remove()">
+          <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M18 6L6 18M6 6l12 12"/>
+          </svg>
         </button>
       </div>
       <div class="cluster-card-body">
-        <div class="cluster-card-section">
-            <div class="form-group">
-                <label class="text-xs text-muted mb-1 block">City</label>
-                <select name="cluster_city" class="form-input" required>
-                    <option value="" disabled ${!data.city ? 'selected' : ''}>Select City</option>
-                    <option value="Port Harcourt (PH)" ${data.city === 'Port Harcourt (PH)' || data.city === 'PH' ? 'selected' : ''}>Port Harcourt (PH)</option>
-                    <option value="Lagos Mainland" ${data.city === 'Lagos Mainland' ? 'selected' : ''}>Lagos Mainland</option>
-                    <option value="Lagos Island" ${data.city === 'Lagos Island' ? 'selected' : ''}>Lagos Island</option>
-                    <option value="Abuja" ${data.city === 'Abuja' ? 'selected' : ''}>Abuja</option>
-                </select>
-            </div>
-            <div class="form-group">
-                <label class="text-xs text-muted mb-1 block">Area (Optional)</label>
-                <input type="text" name="cluster_area" value="${data.area || ''}" placeholder="e.g. Lekki" class="form-input">
-            </div>
+        <div>
+          <label class="text-xs text-muted">City</label>
+          <select name="cluster_city" required style="margin: 0.25rem 0 0 0;">
+            <option value="" disabled ${!data.city ? 'selected' : ''}>Select</option>
+            <option value="Port Harcourt (PH)" ${data.city === 'Port Harcourt (PH)' || data.city === 'PH' ? 'selected' : ''}>Port Harcourt</option>
+            <option value="Lagos Mainland" ${data.city === 'Lagos Mainland' ? 'selected' : ''}>Lagos Mainland</option>
+            <option value="Lagos Island" ${data.city === 'Lagos Island' ? 'selected' : ''}>Lagos Island</option>
+            <option value="Abuja" ${data.city === 'Abuja' ? 'selected' : ''}>Abuja</option>
+          </select>
         </div>
-        <div class="cluster-card-section" style="background: rgba(255,255,255,0.01); border-radius: 8px; padding: 0.5rem;">
-            <div class="form-group">
-                <label class="text-xs text-muted mb-1 block">Min. Units</label>
-                <div style="display: flex; align-items: center; gap: 0.5rem;">
-                    <input type="number" name="cluster_units" value="${data.units_per_cluster || 1}" class="form-input" required style="flex: 1;">
-                    <div class="text-xs text-muted">Box/Unit</div>
-                </div>
-            </div>
-            <div class="form-group">
-                <label class="text-xs text-muted mb-1 block">Max. People</label>
-                 <div style="display: flex; align-items: center; gap: 0.5rem;">
-                    <input type="number" name="cluster_people" value="${data.people_per_cluster || 4}" class="form-input" required style="flex: 1;">
-                    <div class="text-xs text-muted">Slots</div>
-                </div>
-            </div>
+        <div>
+          <label class="text-xs text-muted">Area</label>
+          <input type="text" name="cluster_area" value="${data.area || ''}" placeholder="Optional" style="margin: 0.25rem 0 0 0;">
+        </div>
+        <div>
+          <label class="text-xs text-muted">Min Units</label>
+          <input type="number" name="cluster_units" value="${data.units_per_cluster || 1}" required style="margin: 0.25rem 0 0 0;">
+        </div>
+        <div>
+          <label class="text-xs text-muted">Max People</label>
+          <input type="number" name="cluster_people" value="${data.people_per_cluster || 4}" required style="margin: 0.25rem 0 0 0;">
         </div>
       </div>
     `;
     clusterContainer.appendChild(div);
   }
 
-  // Message removal logic
-  if (window.location.search.includes('msg=')) {
-    setTimeout(() => {
-      const url = new URL(window.location);
-      url.searchParams.delete('msg');
-      window.history.replaceState({}, '', url);
-    }, 3000);
-  }
-
-  // Auto-open if edit product is provided
   {% if edit_product %}
   window.addEventListener('DOMContentLoaded', function() {
     openDrawer({{ edit_product | tojson | forceescape | safe }});

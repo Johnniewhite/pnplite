@@ -1,15 +1,25 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
+from fastapi.responses import RedirectResponse
 from pathlib import Path
+from urllib.parse import quote
 
 from app.config.db import close_mongo_connection, connect_to_mongo
 from app.config.settings import get_settings
 from app.routers import whatsapp, admin, admin_ui, paystack
 from app.routers.paystack import paystack_webhook
+from app.routers.admin_ui import AuthRedirectException
 
 
 def create_app() -> FastAPI:
     app = FastAPI(title="PNP Lite WhatsApp Bot", version="0.1.0")
+
+    # Exception handler for authentication redirects
+    @app.exception_handler(AuthRedirectException)
+    async def auth_redirect_handler(request: Request, exc: AuthRedirectException):
+        """Redirect unauthenticated users to the login page."""
+        next_url = quote(exc.next_url, safe="")
+        return RedirectResponse(url=f"/ui/admin/login?next={next_url}", status_code=303)
 
     # Dependency-injected settings are reusable across routers
     settings = get_settings()

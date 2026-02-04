@@ -1,14 +1,15 @@
 from datetime import datetime
 from typing import Optional
+import secrets
+import hashlib
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, Form, UploadFile, File
-from fastapi.security import HTTPBasic, HTTPBasicCredentials
-from fastapi.responses import RedirectResponse
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Form, UploadFile, File, Response
+from fastapi.responses import RedirectResponse, HTMLResponse
 from fastapi.templating import Jinja2Templates
 from typing import Optional
 from pathlib import Path
 import uuid
-from urllib.parse import urlparse, urlunparse
+from urllib.parse import urlparse, urlunparse, quote
 
 from app.config.db import mongo
 from app.config.settings import Settings, get_settings
@@ -16,7 +17,15 @@ from app.services.whatsapp_service import WhatsAppService
 
 router = APIRouter(prefix="/ui/admin", tags=["admin-ui"])
 templates = Jinja2Templates(directory="templates")
-security = HTTPBasic()
+
+# Simple in-memory session store (in production, use Redis or database)
+_sessions: dict[str, dict] = {}
+
+
+class AuthRedirectException(Exception):
+    """Exception to signal authentication redirect needed."""
+    def __init__(self, next_url: str = "/ui/admin/dashboard"):
+        self.next_url = next_url
 
 
 def datetimeformat(value):
@@ -71,22 +80,129 @@ def build_public_base(request: Request, settings: Settings) -> str:
 
 
 def get_current_admin(
-    credentials: HTTPBasicCredentials = Depends(security),
+    request: Request,
     settings: Settings = Depends(get_settings),
 ) -> str:
-    username = credentials.username
-    password = credentials.password
+    """Get the current admin from session cookie. Raises AuthRedirectException if not authenticated."""
+    session_id = request.cookies.get("admin_session")
+
+    if not session_id or session_id not in _sessions:
+        # Redirect to login page with next URL
+        next_url = str(request.url.path)
+        if request.url.query:
+            next_url += f"?{request.url.query}"
+        raise AuthRedirectException(next_url=next_url)
+
+    session = _sessions[session_id]
+    username = session.get("username")
+
+    # Verify the user is still an admin
     allowed = set(settings.admin_numbers if isinstance(settings.admin_numbers, list) else [])
     if username not in allowed:
-        raise HTTPException(status_code=403, detail="Not an admin number")
-    if settings.admin_dash_password and password != settings.admin_dash_password:
-        raise HTTPException(status_code=401, detail="Invalid admin password")
+        # Session exists but user is no longer an admin, clear session
+        del _sessions[session_id]
+        raise AuthRedirectException(next_url=str(request.url.path))
+
     return username
 
 
+def get_optional_admin(
+    request: Request,
+    settings: Settings = Depends(get_settings),
+) -> Optional[str]:
+    """Get the current admin if authenticated, otherwise return None."""
+    try:
+        return get_current_admin(request, settings)
+    except AuthRedirectException:
+        return None
+
+
+@router.get("/login")
+async def login_page(
+    request: Request,
+    error: Optional[str] = None,
+    next: Optional[str] = None,
+):
+    """Display the login page."""
+    return templates.TemplateResponse(
+        "login.html",
+        {"request": request, "error": error, "next_url": next}
+    )
+
+
+@router.post("/login")
+async def login_submit(
+    request: Request,
+    response: Response,
+    username: str = Form(...),
+    password: str = Form(...),
+    next: Optional[str] = Form(None),
+    settings: Settings = Depends(get_settings),
+):
+    """Handle login form submission."""
+    # Normalize phone number
+    username = username.strip()
+    if not username.startswith("+"):
+        username = "+" + username
+
+    # Check if user is an admin
+    allowed = set(settings.admin_numbers if isinstance(settings.admin_numbers, list) else [])
+
+    if username not in allowed:
+        return templates.TemplateResponse(
+            "login.html",
+            {"request": request, "error": "This phone number is not authorized as an admin.", "next_url": next},
+            status_code=401
+        )
+
+    # Check password
+    if settings.admin_dash_password and password != settings.admin_dash_password:
+        return templates.TemplateResponse(
+            "login.html",
+            {"request": request, "error": "Invalid password. Please try again.", "next_url": next},
+            status_code=401
+        )
+
+    # Create session
+    session_id = secrets.token_urlsafe(32)
+    _sessions[session_id] = {
+        "username": username,
+        "created_at": datetime.utcnow()
+    }
+
+    # Redirect to the next URL or dashboard
+    redirect_url = next if next and next.startswith("/ui/admin") else "/ui/admin/dashboard"
+    redirect_response = RedirectResponse(url=redirect_url, status_code=303)
+    redirect_response.set_cookie(
+        key="admin_session",
+        value=session_id,
+        httponly=True,
+        max_age=86400 * 7,  # 7 days
+        samesite="lax"
+    )
+    return redirect_response
+
+
+@router.get("/logout")
+async def logout(request: Request):
+    """Log out the current admin."""
+    session_id = request.cookies.get("admin_session")
+    if session_id and session_id in _sessions:
+        del _sessions[session_id]
+
+    response = RedirectResponse(url="/ui/admin/login", status_code=303)
+    response.delete_cookie("admin_session")
+    return response
+
+
 @router.get("/")
-async def admin_home():
-    return RedirectResponse(url="/ui/admin/dashboard")
+async def admin_home(request: Request):
+    # Check if authenticated, redirect to login if not
+    try:
+        get_current_admin(request, get_settings())
+        return RedirectResponse(url="/ui/admin/dashboard")
+    except AuthRedirectException:
+        return RedirectResponse(url="/ui/admin/login")
 
 
 @router.get("/dashboard")
