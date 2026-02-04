@@ -1253,7 +1253,7 @@ class WhatsAppService:
                     ai_used = True
             await self.upsert_member_state(phone, {"name": name, "state": "awaiting_city"})
             return (
-                f"Thanks, {name}! Which city are you in? (PH / Lagos / Abuja)",
+                f"Thanks, {name}! Which city are you in?\n\nReply: *PH*, *Lagos*, or *Abuja*",
                 "awaiting_city",
                 state_before,
                 "city",
@@ -1263,39 +1263,31 @@ class WhatsAppService:
 
         if state == "awaiting_city":
             city_value = None
-            # Use AI for city extraction
+            # Use AI for city extraction (handles natural language like "I am in Abuja")
             if self.ai_service:
                 try:
-                    extracted_city = await self.ai_service.extract_city(body_clean, allowed=["PH", "Port Harcourt", "Lagos Mainland", "Lagos Island", "Abuja"])
+                    extracted_city = await self.ai_service.extract_city(body_clean, allowed=["PH", "Lagos", "Abuja"])
                     if extracted_city:
                         city_value = extracted_city
                         ai_used = True
-                    # Special handling: if user says "Lagos" and AI returns empty, default to Lagos Mainland
-                    elif body_clean.lower().strip() in ["lagos", "lag"]:
-                        city_value = "Lagos Mainland"
-                        ai_used = True
                 except Exception as e:
                     print(f"AI city extraction error: {e}")
-            
+
             # If AI extraction fails, try simple fallback matching
             if not city_value:
                 body_lower = body_clean.lower().strip()
                 # Simple fallback matching for common inputs
-                if body_lower in ["ph", "port harcourt", "portharcourt", "harcourt"]:
+                if body_lower in ["ph", "port harcourt", "portharcourt", "harcourt", "p.h", "p.h."]:
                     city_value = "PH"
-                elif body_lower in ["lagos", "lag"]:
-                    city_value = "Lagos Mainland"  # Default to Mainland
-                elif body_lower in ["abuja", "abj"]:
+                elif "lagos" in body_lower or body_lower in ["lag", "mainland", "island"]:
+                    city_value = "Lagos"
+                elif "abuja" in body_lower or body_lower in ["abj", "fct"]:
                     city_value = "Abuja"
-                elif "mainland" in body_lower and "lagos" in body_lower:
-                    city_value = "Lagos Mainland"
-                elif "island" in body_lower and "lagos" in body_lower:
-                    city_value = "Lagos Island"
-            
+
             # If still no city value, ask user to clarify
             if not city_value:
                 return (
-                    "I didn't catch that. Which city are you in? Please reply with: PH, Lagos, or Abuja",
+                    "I didn't catch that. Which city are you in?\n\nPlease reply: *PH*, *Lagos*, or *Abuja*",
                     "awaiting_city",
                     state_before,
                     "city",
@@ -1303,7 +1295,67 @@ class WhatsAppService:
                     []
                 )
 
+            # If Lagos selected, ask for Mainland or Island
+            if city_value == "Lagos":
+                await self.upsert_member_state(phone, {"state": "awaiting_lagos_area"})
+                return (
+                    "Are you on *Lagos Mainland* or *Lagos Island*?\n\nPlease reply: *Mainland* or *Island*",
+                    "awaiting_lagos_area",
+                    state_before,
+                    "city_lagos",
+                    ai_used,
+                    []
+                )
+
+            # For PH and Abuja, proceed directly to membership
             await self.upsert_member_state(phone, {"city": city_value, "state": "awaiting_membership"})
+            friendly_name = member.get("name") or ""
+            prefix = f"Great, {friendly_name}! " if friendly_name else "Great! "
+            membership_explanation = (
+                f"{prefix}Now, let's set up your subscription:\n\n"
+                "*Subscription Plans:*\n"
+                "• *Lifetime* - ₦50,000 (One-time payment, lifetime access)\n"
+                "• *Monthly* - ₦5,000 (Renewable monthly subscription)\n"
+                "• *One-time* - ₦2,000 (Single purchase access)\n\n"
+                "All plans give you access to:\n"
+                "✓ Wholesale pricing through group-buying\n"
+                "✓ Priority delivery\n"
+                "✓ Referral bonuses (₦1,000 per referral)\n"
+                "✓ Access to exclusive deals and seasonal bundles\n\n"
+                "Which plan works for you? (Reply: Lifetime / Monthly / One-time)"
+            )
+            return (
+                membership_explanation,
+                "awaiting_membership",
+                state_before,
+                "membership",
+                ai_used,
+                []
+            )
+
+        # Handle Lagos Mainland/Island sub-selection
+        if state == "awaiting_lagos_area":
+            lagos_area = None
+            body_lower = body_clean.lower().strip()
+
+            # Check for Mainland or Island
+            if "mainland" in body_lower or body_lower in ["1", "main", "land"]:
+                lagos_area = "Lagos Mainland"
+            elif "island" in body_lower or body_lower in ["2", "vi", "lekki", "ikoyi"]:
+                lagos_area = "Lagos Island"
+
+            if not lagos_area:
+                return (
+                    "Please reply with *Mainland* or *Island* to continue.",
+                    "awaiting_lagos_area",
+                    state_before,
+                    "city_lagos",
+                    ai_used,
+                    []
+                )
+
+            # Save the full Lagos area and proceed to membership
+            await self.upsert_member_state(phone, {"city": lagos_area, "state": "awaiting_membership"})
             friendly_name = member.get("name") or ""
             prefix = f"Great, {friendly_name}! " if friendly_name else "Great! "
             membership_explanation = (
@@ -1339,11 +1391,26 @@ class WhatsAppService:
                         ai_used = True
                 except Exception as e:
                     print(f"AI membership extraction error: {e}")
-            
-            # If AI extraction fails, ask user to clarify
+
+            # If AI extraction fails, try simple fallback matching
+            if not membership:
+                body_lower = body_clean.lower().strip()
+                # Direct keyword matching
+                if "life" in body_lower or body_lower in ["1", "50k", "50,000", "50000"]:
+                    membership = "lifetime"
+                elif "month" in body_lower or body_lower in ["2", "5k", "5,000", "5000"]:
+                    membership = "monthly"
+                elif "one" in body_lower or "time" in body_lower or body_lower in ["3", "2k", "2,000", "2000"]:
+                    membership = "onetime"
+
+            # If still no membership, ask user to clarify
             if not membership:
                 return (
-                    "I can set you up with Lifetime (₦50k), Monthly (₦5k), or One-time (₦2k). Which do you want?",
+                    "Which plan would you like?\n\n"
+                    "Reply with:\n"
+                    "• *Lifetime* (₦50k one-time)\n"
+                    "• *Monthly* (₦5k/month)\n"
+                    "• *One-time* (₦2k single access)",
                     "awaiting_membership",
                     state_before,
                     "membership",

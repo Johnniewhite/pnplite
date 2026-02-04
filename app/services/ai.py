@@ -319,26 +319,36 @@ class AIService:
             return None
 
     async def extract_city(self, user_message: str, allowed: Optional[list[str]] = None) -> Optional[str]:
+        """
+        Extract city from natural language. Handles conversational input like:
+        - "I am in Abuja"
+        - "I'm from Port Harcourt"
+        - "Lagos"
+        - "I live in PH"
+
+        Returns: "PH", "Lagos", "Abuja", or None
+        Note: "Lagos" is returned as-is (not Mainland/Island) to trigger sub-selection.
+        """
         try:
-            allowed_list = allowed or ["PH", "Port Harcourt", "Lagos Mainland", "Lagos Island", "Abuja"]
+            allowed_list = allowed or ["PH", "Lagos", "Abuja"]
             prompt = (
-                "You are a city name extractor. Extract the city from the user's message.\n\n"
+                "You are a Nigerian city name extractor. Extract the city from the user's message.\n\n"
                 f"ALLOWED VALUES (return exactly one): {', '.join(allowed_list)}\n\n"
+                "IMPORTANT: The user may provide their city in a conversational way. Extract the city regardless of how they phrase it.\n\n"
                 "MAPPING RULES:\n"
-                "- Input: 'Abuja' → Output: 'Abuja'\n"
-                "- Input: 'PH' or 'Ph' or 'ph' or 'Port Harcourt' or 'Harcourt' or 'Portharcourt' → Output: 'PH'\n"
-                "- Input: 'Lagos Mainland' or 'Mainland' or 'Lagos mainland' → Output: 'Lagos Mainland'\n"
-                "- Input: 'Lagos Island' or 'Island' or 'Lagos island' → Output: 'Lagos Island'\n"
-                "- Input: 'Lagos' (alone, without Mainland/Island) → Output: 'Lagos Mainland' (default to Mainland)\n\n"
-                "OUTPUT FORMAT: Return ONLY the exact value from the allowed list. Nothing else.\n"
-                "IMPORTANT: If user says just 'Lagos', default to 'Lagos Mainland'. Only return empty string if the input is completely unrecognizable.\n\n"
+                "- 'Abuja', 'I am in Abuja', 'I'm from Abuja', 'I live in Abuja' → Output: 'Abuja'\n"
+                "- 'PH', 'Ph', 'ph', 'Port Harcourt', 'Harcourt', 'Portharcourt', 'I am in PH', 'I live in Port Harcourt' → Output: 'PH'\n"
+                "- 'Lagos', 'I am in Lagos', 'I'm from Lagos', 'Lagos Mainland', 'Lagos Island', 'Mainland', 'Island' → Output: 'Lagos'\n\n"
+                "OUTPUT FORMAT: Return ONLY 'PH', 'Lagos', or 'Abuja'. Nothing else.\n"
+                "If the input doesn't mention any of these cities, return empty string.\n\n"
                 "EXAMPLES:\n"
-                "Input: 'Abuja' → Output: 'Abuja'\n"
-                "Input: 'PH' → Output: 'PH'\n"
-                "Input: 'Port Harcourt' → Output: 'PH'\n"
-                "Input: 'Lagos' → Output: 'Lagos Mainland'\n"
-                "Input: 'Lagos Mainland' → Output: 'Lagos Mainland'\n"
-                "Input: 'Lagos Island' → Output: 'Lagos Island'\n"
+                "Input: 'I am in Abuja' → Output: 'Abuja'\n"
+                "Input: 'I'm from Port Harcourt' → Output: 'PH'\n"
+                "Input: 'Lagos' → Output: 'Lagos'\n"
+                "Input: 'I live in PH' → Output: 'PH'\n"
+                "Input: 'Mainland' → Output: 'Lagos'\n"
+                "Input: 'Lagos Island' → Output: 'Lagos'\n"
+                "Input: 'hello' → Output: ''\n"
             )
             completion = await self.client.chat.completions.create(
                 model="gpt-4o-mini",
@@ -352,20 +362,20 @@ class AIService:
             city = completion.choices[0].message.content.strip()
             # Remove any quotes, newlines, or extra formatting
             city = city.replace('"', '').replace("'", '').split("\n")[0].strip(",.! ")
-            
+
             print(f"DEBUG: AI city extraction - Input: '{user_message}' → Raw output: '{completion.choices[0].message.content}' → Cleaned: '{city}'")
-            
+
             # Validate against allowed list (exact match)
             if city and city in allowed_list:
                 return city
-            
+
             # Try case-insensitive match
             city_lower = city.lower() if city else ""
-            for allowed in allowed_list:
-                if city_lower == allowed.lower():
-                    print(f"DEBUG: Matched via case-insensitive: '{city}' → '{allowed}'")
-                    return allowed
-            
+            for allowed_city in allowed_list:
+                if city_lower == allowed_city.lower():
+                    print(f"DEBUG: Matched via case-insensitive: '{city}' → '{allowed_city}'")
+                    return allowed_city
+
             print(f"DEBUG: No match found for city: '{city}'")
             return None
         except Exception as e:
